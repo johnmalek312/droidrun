@@ -9,3 +9,10 @@ test.ipynb
 *.log
 
 messages_log.json
+
+.idea
+.vscode
+.vscode-test
+.vscode-test-*
+.idea/*
+.vscode/*
