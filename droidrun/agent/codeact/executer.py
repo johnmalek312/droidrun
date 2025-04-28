@@ -1,0 +1,160 @@
+import io
+import contextlib
+import ast
+import traceback
+from typing import Any, Dict
+from ..utils.async_utils import async_to_sync
+import asyncio
+
+class SimpleCodeExecutor:
+    """
+    A simple code executor that runs Python code with state persistence.
+
+    This executor maintains a global and local state between executions,
+    allowing for variables to persist across multiple code runs.
+
+    NOTE: not safe for production use! Use with caution.
+    """
+
+    def __init__(self, loop, locals: Dict[str, Any] = {}, globals: Dict[str, Any] = {}, tools = {}, use_same_scope: bool = True):
+        """
+        Initialize the code executor.
+
+        Args:
+            locals: Local variables to use in the execution context
+            globals: Global variables to use in the execution context
+            tools: List of tools available for execution
+        """
+
+        # loop throught tools and add them to globals, but before that check if tool value is async, if so convert it to sync. tools is a dictionary of tool name: function
+        # e.g. tools = {'tool_name': tool_function}
+        for tool_name, tool_function in tools.items():
+            if asyncio.iscoroutinefunction(tool_function):
+                # If the function is async, convert it to sync
+                tool_function = async_to_sync(tool_function)
+            # Add the tool to globals
+            globals[tool_name] = tool_function
+
+
+
+        # State that persists between executions
+        self.globals = globals
+        self.locals = locals
+        self.loop = loop
+        self.use_same_scope = use_same_scope
+        if self.use_same_scope:
+            # If using the same scope, set the globals and locals to the same dictionary
+            self.globals = self.locals = {**self.locals, **{k: v for k, v in self.globals.items() if k not in self.locals}}
+
+    async def execute(self, code: str) -> str:
+        """
+        Execute Python code and capture output and return values.
+
+        Args:
+            code: Python code to execute
+
+        Returns:
+            str: Output from the execution, including print statements.
+        """
+        # Capture stdout and stderr
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        output = ""
+        return_value = None
+        try:
+            # Execute with captured output
+            with contextlib.redirect_stdout(
+                stdout
+            ), contextlib.redirect_stderr(stderr):
+                # Try to detect if there's a return value (last expression)
+                try:
+                    tree = ast.parse(code)
+                    last_node = tree.body[-1] if tree.body else None
+
+                    # If the last statement is an expression, capture its value
+                    if isinstance(last_node, ast.Expr):
+                        # Split code to add a return value assignment
+                        last_line = code.rstrip().split("\n")[-1]
+                        exec_code = (
+                            code[: -len(last_line)]
+                            + "\n__result__ = "
+                            + last_line
+                        )
+
+                        # Execute modified code
+                        exec(exec_code, self.globals, self.locals)
+                        return_value = self.locals.get("__result__")
+                    else:
+                        # Normal execution
+                        exec(code, self.globals, self.locals)
+                except:
+                    # If parsing fails, just execute the code as is
+                    exec(code, self.globals, self.locals)
+
+            # Get output
+            output = stdout.getvalue()
+            if stderr.getvalue():
+                output += "\n" + stderr.getvalue()
+
+        except Exception as e:
+            # Capture exception information
+            output = f"Error: {type(e).__name__}: {str(e)}\n"
+            output += traceback.format_exc()
+
+        if return_value is not None:
+            output += "\n\n" + str(return_value)
+
+        return output
+    
+
+
+
+if __name__ == "__main__":
+    # Example usage
+    import builtins
+    initial_globals = {'__builtins__': builtins}
+    initial_locals = {'initial_message': 'Hello from the start!'}
+
+    executor = SimpleCodeExecutor(locals=initial_locals, globals=initial_globals)
+
+    print("--- Initial State ---")
+    print("Locals:", list(executor.locals.keys()))
+    print("-" * 20)
+
+    # 2. First execution: Import math, define a variable, print
+    code_step_1 = """
+import math
+my_variable = 10 * math.pi
+print(f"Imported math and calculated my_variable: {my_variable:.2f}")
+"""
+    print("\n--- Executing Step 1 ---")
+    output_step_1 = executor.execute(code_step_1)
+    print(output_step_1)
+
+    print("\n--- State After Step 1 ---")
+    print("Locals:", list(executor.locals.keys())) # Should now include 'math' and 'my_variable'
+    print("-" * 20)
+
+
+    # 3. Second execution: Use the imported math and the defined variable
+    code_step_2 = """
+# Use math and my_variable from the previous step
+result = math.sqrt(my_variable)
+print(f"Calculated sqrt of my_variable: {result:.2f}")
+# Return value capture test (last expression)
+result * 2
+"""
+    print("\n--- Executing Step 2 ---")
+    output_step_2 = executor.execute(code_step_2)
+    print(output_step_2)
+
+    print("\n--- State After Step 2 ---")
+    print("Locals:", list(executor.locals.keys())) # Should now include 'result'
+    print("-" * 20)
+
+    # 4. Access the final state directly
+    print("\n--- Final State Check ---")
+    print("Final my_variable:", executor.locals.get('my_variable'))
+    print("Final result:", executor.locals.get('result'))
+    print("Final initial_message:", executor.locals.get('initial_message'))

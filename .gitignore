@@ -3,3 +3,9 @@ dist/
 __pycache__/
 *.py[cod]
 *$py.class
+
+test.py
+test.ipynb
+*.log
+
+messages_log.json
