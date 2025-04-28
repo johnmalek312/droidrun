@@ -76,7 +76,7 @@ All code executions from previous steps are not available in the current step. Y
 - Present the results clearly and concisely as if you computed them directly
 - If relevant, you can briefly mention general methods used, but don't include code snippets in the final answer
 - Structure your response like you're directly answering the user's query, not explaining how you solved it
-- Avoid writing complex code to avoid
+- Write simple code to complete the task step by step, dont try to solve the entire task in one go.
 
 Reminder: Always place your Python code between ```...``` tags when you want to run code. 
 

@@ -60,7 +60,7 @@ async def run_command(command: str, device: str | None, provider: str, model: st
         # Create LLM reasoner
         console.print("[bold blue]Initializing LLM...[/]")
         #llm = OpenAI(model="", temperature=0, reasoning_effort="low")
-        llm = load_llm(provider_name=provider, model=model, base_url=base_url)
+        llm = load_llm(provider_name=provider, model=model, base_url=base_url, **kwargs)
 
         # Setting up tools for the agent
         console.print("[bold blue]Setting up tools...[/]")
@@ -118,7 +118,7 @@ async def run_command(command: str, device: str | None, provider: str, model: st
                 available_tools=tool_list.values(),
                 tools=tools,
                 max_steps=steps,
-                timeout=100
+                timeout=1000
             )
             steps = await agent.run()
 
@@ -292,4 +292,4 @@ async def setup(path: str, device: str | None):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    run_command(provider="OpenAI", command="open grok beta by using the ui. You must use UI interactions, not commands to open package name. then ask it how to tie a shoe lace, then wait 10 seconds after gpt responds and then tell grok something like `i am kidding of course i know how to tie a shoe lace`", device=None, model="o4-mini", steps=15, vision=True, base_url=None)
+    run_command(provider="OpenAI", command="open grok beta by using the ui. You must use UI interactions, not commands to open package name. then ask it how to tie a shoe lace, then wait 10 seconds after gpt responds and then tell grok something like `i am kidding of course i know how to tie a shoe lace`", device=None, model="o4-mini", temperature=0, steps=15, vision=True, base_url=None, reasoning_effort="low")
