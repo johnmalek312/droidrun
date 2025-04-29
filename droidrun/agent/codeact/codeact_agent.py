@@ -49,7 +49,7 @@ You will be given a task to perform. You should output:
 - Python code wrapped in ``` tags that provides the solution to the task, or a step towards the solution. Any output you want to extract from the code should be printed to the console.
 - Text to be shown directly to the user, if you want to ask for more information or provide the final answer.
 - If the previous code execution can be used to respond to the user, then respond directly (typically you want to avoid mentioning anything related to the code execution in your response).
--
+
 
 ## Response Format:
 Example of proper code format:
@@ -68,19 +68,18 @@ print(f"The area of the circle is {area:.2f} square units")
 In addition to the Python Standard Library and any functions you have already written, you can use the following functions:
 {tool_descriptions}
 
-All code executions from previous steps are not available in the current step. You can only use the code you write in this step.
-
+Most functions return a value, inorder to see the result of the function, you MUST print it.
+Some functions may be bound instance methods, so if you encounter error you might think they need an extra parameter (self) but they don't.
 ## Final Answer Guidelines:
 - When providing a final answer, focus on directly answering the user's question
 - Avoid referencing the code you generated unless specifically asked
 - Present the results clearly and concisely as if you computed them directly
 - If relevant, you can briefly mention general methods used, but don't include code snippets in the final answer
 - Structure your response like you're directly answering the user's query, not explaining how you solved it
-- Write simple code to complete the task step by step, dont try to solve the entire task in one go.
 
 Reminder: Always place your Python code between ```...``` tags when you want to run code. 
 
-You MUST ALWAYS to include your reasoning and thought process outside of the code block.
+You MUST ALWAYS to include your reasoning and thought process outside of the code block. You MUST DOUBLE CHECK that TASK IS COMPLETE with a SCREENSHOT.
 """
 
 DEFAULT_CODE_ACT_USER_PROMPT = """**Current Request:**
@@ -111,6 +110,7 @@ class CodeActAgent(Workflow):
         max_steps: int = 10, # Default max steps
         system_prompt: Optional[str] = None,
         user_prompt: Optional[str] = None,
+        always_screenshot: bool = True,
         *args,
         **kwargs
     ):
@@ -134,6 +134,7 @@ class CodeActAgent(Workflow):
         self.memory = ChatMemoryBuffer.from_defaults(llm=self.llm) # Initialize memory buffer
         self.steps_counter = 0 # Initialize step counter
         self.code_exec_counter = 0 # Initialize execution counter
+        self.always_screenshot = always_screenshot # Flag to send screenshot with every prompt
         logger.info("✅ CodeActAgent initialized successfully.")
 
     def parse_tool_descriptions(self) -> str:
@@ -238,10 +239,15 @@ class CodeActAgent(Workflow):
         # Get code and thoughts from event
         code = ev.code
         thoughts = ev.thoughts
+
         # Warning if no thoughts are provided
         if not thoughts:
             logger.warning("🤔 LLM provided code without thoughts. Adding reminder prompt.")
             await self.memory.aput(self.no_thoughts_prompt)
+        else:
+            # print thought but start with emoji at the start of the log
+            logger.info(f"🤔 Thoughts: {thoughts}...")
+
         # If code is present, execute it
         if code:
             return ExecutionEvent(code=code)
@@ -289,6 +295,8 @@ class CodeActAgent(Workflow):
         """Get streaming response from LLM."""
         logger.debug(f"  - Sending {len(chat_history)} messages to LLM.")
         # Combine system prompt with chat history
+        if self.always_screenshot:
+            await self.tools.take_screenshot()
         if self.tools.last_screenshot:
             image_block = ImageBlock(image=base64.b64encode(self.tools.last_screenshot))
             self.tools.last_screenshot = None

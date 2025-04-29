@@ -67,30 +67,8 @@ class SimpleCodeExecutor:
             with contextlib.redirect_stdout(
                 stdout
             ), contextlib.redirect_stderr(stderr):
-                # Try to detect if there's a return value (last expression)
-                try:
-                    tree = ast.parse(code)
-                    last_node = tree.body[-1] if tree.body else None
 
-                    # If the last statement is an expression, capture its value
-                    if isinstance(last_node, ast.Expr):
-                        # Split code to add a return value assignment
-                        last_line = code.rstrip().split("\n")[-1]
-                        exec_code = (
-                            code[: -len(last_line)]
-                            + "\n__result__ = "
-                            + last_line
-                        )
-
-                        # Execute modified code
-                        exec(exec_code, self.globals, self.locals)
-                        return_value = self.locals.get("__result__")
-                    else:
-                        # Normal execution
-                        exec(code, self.globals, self.locals)
-                except:
-                    # If parsing fails, just execute the code as is
-                    exec(code, self.globals, self.locals)
+                exec(code, self.globals, self.locals)
 
             # Get output
             output = stdout.getvalue()
@@ -111,50 +89,64 @@ class SimpleCodeExecutor:
 
 
 if __name__ == "__main__":
-    # Example usage
-    import builtins
-    initial_globals = {'__builtins__': builtins}
-    initial_locals = {'initial_message': 'Hello from the start!'}
+    async def async_main():
+        # Example usage
+        import builtins
+        initial_globals = {'__builtins__': builtins}
+        initial_locals = {'initial_message': 'Hello from the start!'}
 
-    executor = SimpleCodeExecutor(locals=initial_locals, globals=initial_globals)
+        executor = SimpleCodeExecutor(locals=initial_locals, globals=initial_globals, loop=None)
 
-    print("--- Initial State ---")
-    print("Locals:", list(executor.locals.keys()))
-    print("-" * 20)
+#         print("--- Initial State ---")
+#         print("Locals:", list(executor.locals.keys()))
+#         print("-" * 20)
 
-    # 2. First execution: Import math, define a variable, print
-    code_step_1 = """
-import math
-my_variable = 10 * math.pi
-print(f"Imported math and calculated my_variable: {my_variable:.2f}")
-"""
-    print("\n--- Executing Step 1 ---")
-    output_step_1 = executor.execute(code_step_1)
-    print(output_step_1)
+#         # 2. First execution: Import math, define a variable, print
+#         code_step_1 = """
+# import math
+# my_variable = 10 * math.pi
+# print(f"Imported math and calculated my_variable: {my_variable:.2f}")
+# """
+#         print("\n--- Executing Step 1 ---")
+#         output_step_1 = await executor.execute(code_step_1)
+#         print(output_step_1)
 
-    print("\n--- State After Step 1 ---")
-    print("Locals:", list(executor.locals.keys())) # Should now include 'math' and 'my_variable'
-    print("-" * 20)
+#         print("\n--- State After Step 1 ---")
+#         print("Locals:", list(executor.locals.keys())) # Should now include 'math' and 'my_variable'
+#         print("-" * 20)
 
 
-    # 3. Second execution: Use the imported math and the defined variable
-    code_step_2 = """
-# Use math and my_variable from the previous step
-result = math.sqrt(my_variable)
-print(f"Calculated sqrt of my_variable: {result:.2f}")
-# Return value capture test (last expression)
-result * 2
-"""
-    print("\n--- Executing Step 2 ---")
-    output_step_2 = executor.execute(code_step_2)
-    print(output_step_2)
+#         # 3. Second execution: Use the imported math and the defined variable
+#         code_step_2 = """
+# # Use math and my_variable from the previous step
+# result = math.sqrt(my_variable)
+# print(f"Calculated sqrt of my_variable: {result:.2f}")
+# # Return value capture test (last expression)
+# result * 2
+#     """
+#         print("\n--- Executing Step 2 ---")
+#         output_step_2 = await executor.execute(code_step_2)
+#         print(output_step_2)
 
-    print("\n--- State After Step 2 ---")
-    print("Locals:", list(executor.locals.keys())) # Should now include 'result'
-    print("-" * 20)
+#         print("\n--- State After Step 2 ---")
+#         print("Locals:", list(executor.locals.keys())) # Should now include 'result'
+#         print("-" * 20)
 
-    # 4. Access the final state directly
-    print("\n--- Final State Check ---")
-    print("Final my_variable:", executor.locals.get('my_variable'))
-    print("Final result:", executor.locals.get('result'))
-    print("Final initial_message:", executor.locals.get('initial_message'))
+#         # 4. Access the final state directly
+#         print("\n--- Final State Check ---")
+#         print("Final my_variable:", executor.locals.get('my_variable'))
+#         print("Final result:", executor.locals.get('result'))
+#         print("Final initial_message:", executor.locals.get('initial_message'))
+
+
+        print("Testing if conditions: ")
+        code_step_3 = """
+if True:
+    5 + 10
+"""  
+        output_step_3 = await executor.execute(code_step_3)
+        print(output_step_3)
+        print("Locals:", list(executor.locals.keys())) # Should now include 'result'
+
+    import asyncio
+    asyncio.run(async_main())

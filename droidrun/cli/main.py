@@ -74,10 +74,10 @@ async def run_command(command: str, device: str | None, provider: str, model: st
             goal=command,
             llm=llm,
             code_execute_fn=executor.execute,
-            available_tools=list(tool_list.values()), # Pass the tool functions
+            available_tools=tool_list.values(),
             tools=tools_instance, # Pass the Tools instance
             max_steps=steps,
-            # vision=vision # Agent might need this directly or infer from tools
+            timeout=1000
         )
         console.print("[yellow]Press Ctrl+C to stop execution[/]")
 
@@ -255,4 +255,10 @@ async def setup(path: str, device: str | None):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    run_command(provider="Gemini", command="open grok beta by using the ui. You must use UI interactions, not commands to open package name. then ask it how to tie a shoe lace, then wait 10 seconds after gpt responds and then tell grok something like `i am kidding of course i know how to tie a shoe lace`", device=None, model="models/gemini-2.5-flash-preview-04-17", temperature=0, steps=30, vision=True, base_url=None)
+    model = "models/gemini-2.5-flash-preview-04-17"
+    provider = "Gemini"
+    command = "Delete the following expenses from pro expense: Stationery."
+    temperature = 0
+    steps = 30
+
+    run_command(provider=provider, command=command, device=None, model=model, temperature=temperature, steps=steps, vision=True, base_url=None)

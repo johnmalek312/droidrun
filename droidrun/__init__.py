@@ -10,6 +10,7 @@ from .agent.codeact.executer import SimpleCodeExecutor
 from .agent.utils.llm_picker import load_llm
 from .tools.device import DeviceManager
 from .tools.actions import Tools
+from .tools.loader import load_tools
 
 
 # Make main components available at package level
@@ -19,4 +20,5 @@ __all__ = [
     "Tools",
     "load_llm",
     "SimpleCodeExecutor",
+    "load_tools",
 ]

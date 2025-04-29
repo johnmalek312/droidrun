@@ -7,7 +7,7 @@ from typing import Tuple, Dict, Callable, Any, Optional
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
-async def load_tools(serial: Optional[str] = None, vision: bool = True) -> Tuple[Dict[str, Callable[..., Any]], Tools]:
+async def load_tools(serial: Optional[str] = None, vision: bool = False) -> Tuple[Dict[str, Callable[..., Any]], Tools]:
     """
     Initializes the Tools class and returns a dictionary of available tool functions
     and the Tools instance itself. If serial is not provided, it attempts to find
@@ -15,7 +15,7 @@ async def load_tools(serial: Optional[str] = None, vision: bool = True) -> Tuple
 
     Args:
         serial: The device serial number. If None, finds the first available device.
-        vision: Whether to include vision-related tools.
+        vision: Whether to include vision-related tools. (Set to false if you want to always send screenshot)
 
     Returns:
         A tuple containing:
@@ -41,10 +41,11 @@ async def load_tools(serial: Optional[str] = None, vision: bool = True) -> Tuple
 
     tool_list = {
         # UI interaction
-        "tap": tools_instance.tap,
+        #"tap": tools_instance.tap,
         "swipe": tools_instance.swipe,
         "input_text": tools_instance.input_text,
         "press_key": tools_instance.press_key,
+        "tap_by_coordinates": tools_instance.tap_by_coordinates,
 
         # App management
         "start_app": tools_instance.start_app,
@@ -56,10 +57,7 @@ async def load_tools(serial: Optional[str] = None, vision: bool = True) -> Tuple
         "get_clickables": tools_instance.get_clickables,
 
         # Data extraction
-        "extract": tools_instance.extract,
-
-        # Goal management
-        "complete": tools_instance.complete,
+        "extract": tools_instance.extract
     }
     logger.debug("Base tools loaded.")
 

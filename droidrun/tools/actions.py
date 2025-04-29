@@ -536,13 +536,16 @@ class Tools:
             return f"Error: {str(e)}"
 
     # Rename the old tap function to tap_by_coordinates for backward compatibility
-    async def tap_by_coordinates(self, x: int, y: int) -> str:
+    async def tap_by_coordinates(self, x: int, y: int) -> str | bool:
         """
-        Tap on the device screen at specific coordinates.
+        Tap on the device screen at specific coordinates. 
         
         Args:
             x: X coordinate
             y: Y coordinate
+        
+        Returns:
+            True on success, or an error message string on failure.
         """
         try:
             if self.serial:
@@ -554,7 +557,7 @@ class Tools:
                 device = await self.get_device()
             
             await device.tap(x, y)
-            return f"Tapped at ({x}, {y})"
+            return True
         except ValueError as e:
             return f"Error: {str(e)}"
 
@@ -821,7 +824,7 @@ class Tools:
     async def list_packages(
         self,
         include_system_apps: bool = False
-    ) -> Dict[str, Any]:
+    ) -> List[str]:
         """
         List installed packages on the device.
         
@@ -829,10 +832,7 @@ class Tools:
             include_system_apps: Whether to include system apps (default: False)
         
         Returns:
-            Dictionary containing:
-            - packages: List of dictionaries with 'package' and 'path' keys
-            - count: Number of packages found
-            - type: Type of packages listed ("all" or "non-system")
+            List of package names
         """
         try:
             if self.serial:
@@ -851,15 +851,11 @@ class Tools:
             output = await device._adb.shell(device._serial, " ".join(cmd))
             
             # Parse the package list using the function
-            packages = self.parse_package_list(output)
-            package_type = "all" if include_system_apps else "non-system"
-            
+            packages = self.parse_package_list(output)            
             # Format package list for better readability
-            message = f"Found {len(packages)} {package_type} packages on the device"
-            packages = packages
-            package_list = "\n".join([f"- {pkg.get('package', '')}" for pkg in packages])
+            package_list = [pack["package"] for pack in packages]
             
-            return f"{message}\n{package_list}"
+            return package_list
         except ValueError as e:
             raise ValueError(f"Error listing packages: {str(e)}")
 
