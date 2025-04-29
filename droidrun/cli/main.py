@@ -257,8 +257,9 @@ async def setup(path: str, device: str | None):
 if __name__ == '__main__':
     model = "models/gemini-2.5-flash-preview-04-17"
     provider = "Gemini"
-    command = "Delete the following expenses from pro expense: Stationery."
+    command = "play a game of 2048 on https://play2048.co/ and try your best to win"
     temperature = 0
     steps = 30
+    vision = False # Set to false to remove screenshot tool
 
-    run_command(provider=provider, command=command, device=None, model=model, temperature=temperature, steps=steps, vision=True, base_url=None)
+    run_command(provider=provider, command=command, device=None, model=model, temperature=temperature, steps=steps, vision=vision, base_url=None)
