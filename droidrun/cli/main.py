@@ -123,13 +123,14 @@ def cli():
 @click.option('--device', '-d', help='Device serial number or IP address', default=None)
 @click.option('--provider', '-p', help='LLM provider (openai, ollama, anthropic, gemini,deepseek)', default='Gemini')
 @click.option('--model', '-m', help='LLM model name', default="models/gemini-2.5-flash-preview-04-17")
+@click.option('--temperature', type=int, help='Temperature for LLM', default=0.2)
 @click.option('--steps', type=int, help='Maximum number of steps', default=15)
 @click.option('--vision', is_flag=True, help='Enable vision capabilities', default=True)
 @click.option('--base_url', '-u', help='Base URL for API (e.g., OpenRouter or Ollama)', default=None)
-def run(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url):
+def run(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, temperature: int):
     """Run a command on your Android device using natural language."""
     # Call our standalone function
-    return run_command(command, device, provider, model, steps, vision, base_url)
+    return run_command(command, device, provider, model, steps, vision, base_url, temperature=temperature)
 
 @cli.command()
 @coro
