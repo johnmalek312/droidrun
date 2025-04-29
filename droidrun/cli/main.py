@@ -18,13 +18,10 @@ import asyncio
 import click
 import os
 from rich.console import Console
-from ..tools import DeviceManager, Tools
+from ..tools import DeviceManager, Tools, load_tools # Import the loader
 from ..agent.codeact import CodeActAgent, SimpleCodeExecutor
 from ..agent.utils.llm_picker import load_llm
 from functools import wraps
-from llama_index.llms.openai import OpenAI
-
-device_serial = ""
 
 # Import the install_app function directly for the setup command
 console = Console()
@@ -41,61 +38,26 @@ def coro(f):
 async def run_command(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, **kwargs):
     """Run a command on your Android device using natural language."""
     console.print(f"[bold blue]Executing command:[/] {command}")
-    global device_serial
+    # global device_serial # No longer strictly needed here if load_tools handles it
+    if not kwargs.get("temperature"):
+        kwargs["temperature"] = 0
     try:
-        # Try to find a device if none specified
-        if not device:
-            devices = await device_manager.list_devices()
-            if not devices:
-                console.print("[yellow]No devices connected.[/]")
-                return
-            
-            device_serial = devices[0].serial
-            console.print(f"[blue]Using device:[/] {device_serial}")
-        
-        # Set the device serial in the environment variable
+        # Setting up tools for the agent using the loader
+        console.print("[bold blue]Setting up tools...[/]")
+        # Pass the 'device' argument from the CLI options to load_tools
+        tool_list, tools_instance = await load_tools(serial=device, vision=vision)
+        # Get the actual serial used (either provided or auto-detected)
+        device_serial = tools_instance.serial
+        console.print(f"[blue]Using device:[/] {device_serial}")
+
+
+        # Set the device serial in the environment variable (optional, depends if needed elsewhere)
         os.environ["DROIDRUN_DEVICE_SERIAL"] = device_serial
         console.print(f"[blue]Set DROIDRUN_DEVICE_SERIAL to:[/] {device_serial}")
-        
+
         # Create LLM reasoner
         console.print("[bold blue]Initializing LLM...[/]")
-        #llm = OpenAI(model="", temperature=0, reasoning_effort="low")
         llm = load_llm(provider_name=provider, model=model, base_url=base_url, **kwargs)
-
-        # Setting up tools for the agent
-        console.print("[bold blue]Setting up tools...[/]")
-        tools = Tools(serial=device_serial)
-
-        tool_list = {
-            # UI interaction
-            "tap": tools.tap,
-            "swipe": tools.swipe,
-            "input_text": tools.input_text,
-            "press_key": tools.press_key,
-
-            # App management
-            "start_app": tools.start_app,
-            "install_app": tools.install_app,
-            "uninstall_app": tools.uninstall_app,
-            "list_packages": tools.list_packages,
-
-            # UI analysis
-            "get_clickables": tools.get_clickables,
-
-            # Data extraction
-            "extract": tools.extract,
-
-            # Goal management
-            "complete": tools.complete,
-
-        }
-
-        if vision:
-            # Add vision
-            vision_tools = {
-                "take_screenshot": tools.take_screenshot,
-            }
-            tool_list.update(vision_tools)
 
         # Create code executor
         console.print("[bold blue] Initializing Code Executor...[/]")
@@ -108,36 +70,37 @@ async def run_command(command: str, device: str | None, provider: str, model: st
         )
         # Create and run the agent
         console.print("[bold blue]Running CodeAct agent...[/]")
+        agent = CodeActAgent(
+            goal=command,
+            llm=llm,
+            code_execute_fn=executor.execute,
+            available_tools=list(tool_list.values()), # Pass the tool functions
+            tools=tools_instance, # Pass the Tools instance
+            max_steps=steps,
+            # vision=vision # Agent might need this directly or infer from tools
+        )
         console.print("[yellow]Press Ctrl+C to stop execution[/]")
-        
-        try:
-            agent = CodeActAgent(
-                goal=command,
-                llm=llm,
-                code_execute_fn=executor.execute,
-                available_tools=tool_list.values(),
-                tools=tools,
-                max_steps=steps,
-                timeout=1000
-            )
-            steps = await agent.run()
 
-            # Final message
-            console.print(f"[bold green]Execution completed with {len(steps)} steps[/]")
+        try:
+            await agent.run()
+        except KeyboardInterrupt:
+            console.print("\n[bold red]Execution stopped by user.[/]")
         except ValueError as e:
-            if "does not support vision" in str(e):
-                console.print(f"[bold red]Vision Error:[/] {e}")
-                console.print("[yellow]Please specify a vision-capable model with the --model flag.[/]")
-                console.print("[blue]Recommended models:[/]")
-                console.print("  - OpenAI: gpt-4o or gpt-4-vision")
-                console.print("  - Anthropic: claude-3-opus-20240229 or claude-3-sonnet-20240229")
-                console.print("  - Gemini: gemini-pro-vision")
-                return
-            else:
-                raise  # Re-raise other ValueError exceptions
-        
-    except Exception as e:
+            console.print(f"[bold red]Configuration Error:[/] {e}")
+        except Exception as e:
+            console.print(f"[bold red]An unexpected error occurred during agent execution:[/] {e}")
+            # Consider adding traceback logging here for debugging
+            # import traceback
+            # console.print(traceback.format_exc())
+
+
+    except ValueError as e: # Catch ValueError from load_tools (no device found)
         console.print(f"[bold red]Error:[/] {e}")
+    except Exception as e:
+        console.print(f"[bold red]An unexpected error occurred during setup:[/] {e}")
+        # Consider adding traceback logging here for debugging
+        # import traceback
+        # console.print(traceback.format_exc())
 
 
 
@@ -158,10 +121,10 @@ def cli():
 @cli.command()
 @click.argument('command', type=str)
 @click.option('--device', '-d', help='Device serial number or IP address', default=None)
-@click.option('--provider', '-p', help='LLM provider (openai, ollama, anthropic, gemini,deepseek)', default='openai')
-@click.option('--model', '-m', help='LLM model name', default=None)
+@click.option('--provider', '-p', help='LLM provider (openai, ollama, anthropic, gemini,deepseek)', default='Gemini')
+@click.option('--model', '-m', help='LLM model name', default="models/gemini-2.5-flash-preview-04-17")
 @click.option('--steps', type=int, help='Maximum number of steps', default=15)
-@click.option('--vision', is_flag=True, help='Enable vision capabilities')
+@click.option('--vision', is_flag=True, help='Enable vision capabilities', default=True)
 @click.option('--base_url', '-u', help='Base URL for API (e.g., OpenRouter or Ollama)', default=None)
 def run(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url):
     """Run a command on your Android device using natural language."""
@@ -292,4 +255,4 @@ async def setup(path: str, device: str | None):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    run_command(provider="OpenAI", command="open grok beta by using the ui. You must use UI interactions, not commands to open package name. then ask it how to tie a shoe lace, then wait 10 seconds after gpt responds and then tell grok something like `i am kidding of course i know how to tie a shoe lace`", device=None, model="o4-mini", temperature=0, steps=15, vision=True, base_url=None, reasoning_effort="low")
+    run_command(provider="Gemini", command="open grok beta by using the ui. You must use UI interactions, not commands to open package name. then ask it how to tie a shoe lace, then wait 10 seconds after gpt responds and then tell grok something like `i am kidding of course i know how to tie a shoe lace`", device=None, model="models/gemini-2.5-flash-preview-04-17", temperature=0, steps=30, vision=True, base_url=None)

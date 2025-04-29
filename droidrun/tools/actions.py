@@ -240,7 +240,169 @@ class Tools:
                 raise ValueError(f"Error retrieving clickable elements: {e}")
                 
         except Exception as e:
-            raise ValueError(f"Error getting clickable elements: {e}")
+            try:
+                # Get the device
+                if self.serial:
+                    device_manager = DeviceManager()
+                    device = await device_manager.get_device(self.serial)
+                    if not device:
+                        raise ValueError(f"Device {self.serial} not found")
+                else:
+                    device = await self.get_device()
+                
+                # Create a temporary file for the JSON
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp:
+                    local_path = temp.name
+                
+                try:
+                    # Clear logcat to make it easier to find our output
+                    await device._adb.shell(device._serial, "logcat -c")
+                    
+                    # Trigger the custom service via broadcast to get only interactive elements
+                    await device._adb.shell(device._serial, "am broadcast -a com.droidrun.portal.GET_ELEMENTS")
+                    
+                    # Poll for the JSON file path
+                    start_time = asyncio.get_event_loop().time()
+                    max_wait_time = 10  # Maximum wait time in seconds
+                    poll_interval = 0.2  # Check every 200ms
+                    
+                    device_path = None
+                    while asyncio.get_event_loop().time() - start_time < max_wait_time:
+                        # Check logcat for the file path
+                        logcat_output = await device._adb.shell(device._serial, "logcat -d | grep \"DROIDRUN_FILE\" | grep \"JSON data written to\" | tail -1")
+                        
+                        # Parse the file path if present
+                        match = re.search(r"JSON data written to: (.*)", logcat_output)
+                        if match:
+                            device_path = match.group(1).strip()
+                            break
+                            
+                        # Wait before polling again
+                        await asyncio.sleep(poll_interval)
+                    
+                    # Check if we found the file path
+                    if not device_path:
+                        raise ValueError(f"Failed to find the JSON file path in logcat after {max_wait_time} seconds")
+                        
+                    # Pull the JSON file from the device
+                    await device._adb.pull_file(device._serial, device_path, local_path)
+                    
+                    # Read the JSON file
+                    async with aiofiles.open(local_path, "r", encoding="utf-8") as f:
+                        json_content = await f.read()
+                        
+                    # Clean up the temporary file
+                    with contextlib.suppress(OSError):
+                        os.unlink(local_path)
+                    
+                    # Try to parse the JSON
+                    import json
+                    try:
+                        ui_data = json.loads(json_content)
+                        
+                        # Process the JSON to extract elements
+                        flattened_elements = []
+                        
+                        # Process the nested elements structure
+                        if isinstance(ui_data, list):
+                            # For each parent element in the list
+                            for parent in ui_data:
+                                # Add the parent if it's clickable (type should be 'clickable')
+                                if parent.get('type') == 'clickable' and parent.get('index', -1) != -1:
+                                    parent_copy = {k: v for k, v in parent.items() if k != 'children'}
+                                    parent_copy['isParent'] = True
+                                    flattened_elements.append(parent_copy)
+                                
+                                # Process children 
+                                children = parent.get('children', [])
+                                for child in children:
+                                    # Add all children that have valid indices, regardless of type
+                                    # Include text elements as well, not just clickable ones
+                                    if child.get('index', -1) != -1:
+                                        child_copy = child.copy()
+                                        child_copy['isParent'] = False
+                                        child_copy['parentIndex'] = parent.get('index')
+                                        flattened_elements.append(child_copy)
+                                        
+                                        # Also process nested children if present
+                                        nested_children = child.get('children', [])
+                                        for nested_child in nested_children:
+                                            if nested_child.get('index', -1) != -1:
+                                                nested_copy = nested_child.copy()
+                                                nested_copy['isParent'] = False
+                                                nested_copy['parentIndex'] = child.get('index')
+                                                nested_copy['grandparentIndex'] = parent.get('index')
+                                                flattened_elements.append(nested_copy)
+                        else:
+                            # Old format handling (dictionary with clickable_elements)
+                            clickable_elements = ui_data.get("clickable_elements", [])
+                            for element in clickable_elements:
+                                if element.get('index', -1) != -1:
+                                    element_copy = {k: v for k, v in element.items() if k != 'isClickable'}
+                                    flattened_elements.append(element_copy)
+                        
+                        # Update the global cache with the processed elements
+                        CLICKABLE_ELEMENTS_CACHE = flattened_elements
+                        
+                        # Sort by index
+                        flattened_elements.sort(key=lambda x: x.get('index', 0))
+                        
+                        # Create a summary of important text elements for each clickable parent
+                        text_summary = []
+                        parent_texts = {}
+                        tappable_elements = []
+                        
+                        # Group text elements by their parent and identify tappable elements
+                        for elem in flattened_elements:
+                            # Track elements that are actually tappable (have bounds and either type clickable or are parents)
+                            if elem.get('bounds') and (elem.get('type') == 'clickable' or elem.get('isParent')):
+                                tappable_elements.append(elem.get('index'))
+                            
+                            if elem.get('type') == 'text' and elem.get('text'):
+                                parent_id = elem.get('parentIndex')
+                                if parent_id is not None:
+                                    if parent_id not in parent_texts:
+                                        parent_texts[parent_id] = []
+                                    parent_texts[parent_id].append(elem.get('text'))
+                        
+                        # Create a text summary for parents with text children
+                        for parent_id, texts in parent_texts.items():
+                            # Find the parent element
+                            parent = None
+                            for elem in flattened_elements:
+                                if elem.get('index') == parent_id:
+                                    parent = elem
+                                    break
+                            
+                            if parent:
+                                # Mark if this element is directly tappable
+                                tappable_marker = "🔘" if parent_id in tappable_elements else "📄"
+                                summary = f"{tappable_marker} Element {parent_id} ({parent.get('className', 'Unknown')}): " + " | ".join(texts)
+                                text_summary.append(summary)
+                        
+                        # Sort the text summary for better readability
+                        text_summary.sort()
+                        
+                        # Count how many elements are actually tappable
+                        tappable_count = len(tappable_elements)
+                        
+                        # Add a short sleep to ensure UI is fully loaded/processed
+                        await asyncio.sleep(0.5)  # 500ms sleep
+                        
+
+                        clickable = flattened_elements
+                        return clickable
+                    except json.JSONDecodeError:
+                        raise ValueError("Failed to parse UI elements JSON data")
+                    
+                except Exception as e:
+                    # Clean up in case of error
+                    with contextlib.suppress(OSError):
+                        os.unlink(local_path)
+                    raise ValueError(f"Error retrieving clickable elements: {e}")
+                    
+            except Exception as e:
+                raise ValueError(f"Error getting clickable elements: {e}")
 
     async def tap_by_index(self, index: int) -> str:
         """

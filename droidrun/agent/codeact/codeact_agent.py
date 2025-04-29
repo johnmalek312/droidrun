@@ -133,6 +133,7 @@ class CodeActAgent(Workflow):
         self.no_thoughts_prompt = ChatMessage(role="user", content=PromptTemplate(DEFAULT_NO_THOUGHTS_PROMPT).format(goal=goal))
         self.memory = ChatMemoryBuffer.from_defaults(llm=self.llm) # Initialize memory buffer
         self.steps_counter = 0 # Initialize step counter
+        self.code_exec_counter = 0 # Initialize execution counter
         logger.info("✅ CodeActAgent initialized successfully.")
 
     def parse_tool_descriptions(self) -> str:
@@ -220,7 +221,7 @@ class CodeActAgent(Workflow):
         logger.info(f"🧠 Step {self.steps_counter}/{self.max_steps}: Calling LLM...")
         if self.steps_counter > self.max_steps:
             logger.warning(f"🚫 Max steps ({self.max_steps}) reached. Stopping execution.")
-            return StopEvent(result={'finished':True, 'message':"Max steps reached. Stopping execution."})
+            return StopEvent(result={'finished':True, 'message':"Max steps reached. Stopping execution.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
         # Get LLM response
         response = await self._get_llm_response(chat_history)
         # Add response to memory
@@ -247,7 +248,7 @@ class CodeActAgent(Workflow):
         else:
             final_message = thoughts or "No code provided and no final message."
             logger.info(f"✅ No code to execute. Stopping workflow. Final Message: {final_message}...")
-            return StopEvent(result={'finished': True, 'message': final_message})
+            return StopEvent(result={'finished': True, 'message': final_message, 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
 
     @step
     async def execute_code(self, ev: ExecutionEvent, ctx: Context) -> ExecutionResultEvent:
@@ -257,6 +258,7 @@ class CodeActAgent(Workflow):
         logger.info(f"⚡ Executing code:\n```python\n{code}\n```")
         # Execute the code using the provided function
         try:
+            self.code_exec_counter += 1
             result = await self.code_execute_fn(code)
             logger.info(f"💡 Code execution successful. Result: {result}")
             return ExecutionResultEvent(output=str(result)) # Ensure output is string
