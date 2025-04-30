@@ -584,9 +584,9 @@ class Tools:
         end_x: int,
         end_y: int,
         duration_ms: int = 300
-    ) -> str:
+    ) -> bool:
         """
-        Perform a swipe gesture on the device screen.
+        Performs a straight-line swipe gesture on the device screen.
         
         Args:
             start_x: Starting X coordinate
@@ -594,6 +594,8 @@ class Tools:
             end_x: Ending X coordinate
             end_y: Ending Y coordinate
             duration_ms: Duration of swipe in milliseconds
+        Returns:
+            True on success, or an error message string on failure.
         """
         try:
             if self.serial:
@@ -605,7 +607,7 @@ class Tools:
                 device = await self.get_device()
             
             await device.swipe(start_x, start_y, end_x, end_y, duration_ms)
-            return f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+            return True
         except ValueError as e:
             return f"Error: {str(e)}"
 

@@ -35,17 +35,22 @@ def coro(f):
 
 # Define the run command as a standalone function to be used as both a command and default
 @coro
-async def run_command(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, **kwargs):
+async def run_command(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, always_screenshot: bool, always_ui: bool, **kwargs):
     """Run a command on your Android device using natural language."""
     console.print(f"[bold blue]Executing command:[/] {command}")
-    # global device_serial # No longer strictly needed here if load_tools handles it
+
     if not kwargs.get("temperature"):
         kwargs["temperature"] = 0
     try:
+        if always_screenshot:
+            if not vision:
+                console.print("[bold yellow]Warning:[/] Vision is disabled, but screenshot is enabled. Vision parameter will be ignored.")
+            vision = False # Disable screenshot tool if always sending screenshots
+
         # Setting up tools for the agent using the loader
         console.print("[bold blue]Setting up tools...[/]")
         # Pass the 'device' argument from the CLI options to load_tools
-        tool_list, tools_instance = await load_tools(serial=device, vision=vision)
+        tool_list, tools_instance = await load_tools(serial=device, vision=vision, always_ui=always_ui)
         # Get the actual serial used (either provided or auto-detected)
         device_serial = tools_instance.serial
         console.print(f"[blue]Using device:[/] {device_serial}")
@@ -77,6 +82,8 @@ async def run_command(command: str, device: str | None, provider: str, model: st
             available_tools=tool_list.values(),
             tools=tools_instance, # Pass the Tools instance
             max_steps=steps,
+            always_screenshot=always_screenshot,
+            always_ui=always_ui,
             timeout=1000
         )
         console.print("[yellow]Press Ctrl+C to stop execution[/]")
@@ -127,10 +134,12 @@ def cli():
 @click.option('--steps', type=int, help='Maximum number of steps', default=15)
 @click.option('--vision', is_flag=True, help='Enable vision capabilities', default=True)
 @click.option('--base_url', '-u', help='Base URL for API (e.g., OpenRouter or Ollama)', default=None)
-def run(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, temperature: int):
+@click.option('--screenshot', is_flag=True, help='Whether to always send screenshot with prompt.', default=True)
+@click.option('--always-ui', is_flag=True, help='Whether to always use UI tools.', default=False)
+def run(command: str, device: str | None, provider: str, model: str, steps: int, vision: bool, base_url: str, temperature: int, screenshot: bool, always_ui: bool):
     """Run a command on your Android device using natural language."""
     # Call our standalone function
-    return run_command(command, device, provider, model, steps, vision, base_url, temperature=temperature)
+    return run_command(command, device, provider, model, steps, vision, base_url, temperature=temperature, always_screenshot=screenshot, always_ui=always_ui)
 
 @cli.command()
 @coro
@@ -258,9 +267,14 @@ async def setup(path: str, device: str | None):
 if __name__ == '__main__':
     model = "models/gemini-2.5-flash-preview-04-17"
     provider = "Gemini"
-    command = "play a game of 2048 on https://play2048.co/ and try your best to win"
+    command = "Delete the following expenses from pro expense: Stationery, Side Business, Pet Supplies."
+    provider = "OpenAI"
+    model = "o4-mini"
+    #command = "there is an orange dot or circle on the screen, tap on it with tap_by_coordinates() function"
+    #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     temperature = 0
     steps = 30
     vision = False # Set to false to remove screenshot tool
-
-    run_command(provider=provider, command=command, device=None, model=model, temperature=temperature, steps=steps, vision=vision, base_url=None)
+    always_screnshot = True # Set to true to always send screenshot with prompt
+    always_ui = True # Set to true to always use UI tools
+    run_command(provider=provider, command=command, device=None, model=model, temperature=temperature, steps=steps, vision=vision, base_url=None, always_screenshot=always_screnshot, always_ui=always_ui)

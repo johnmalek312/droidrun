@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import re
 import inspect
@@ -41,6 +42,21 @@ def estimate_tokens(text: str) -> int:
         return 0
     return len(text) // 4 + 1  # Add 1 to be safe
 
+
+def message_copy(message: ChatMessage, deep = True) -> ChatMessage:
+    if deep:
+        copied_message = message.model_copy()
+        copied_message.blocks = [block.model_copy () for block in message.blocks]
+
+        return copied_message
+    copied_message = message.model_copy()
+
+    # Create a new, independent list containing the same block references
+    copied_message.blocks = list(message.blocks) # or original_message.blocks[:]
+
+    return copied_message
+
+
 # --- Agent Definition ---
 
 DEFAULT_CODE_ACT_SYSTEM_PROMPT = """You are a helpful AI assistant that can write and execute Python code to solve problems.
@@ -63,6 +79,15 @@ def calculate_area(radius):
 # Calculate the area for radius = 5
 area = calculate_area(5)
 print(f"The area of the circle is {area:.2f} square units")
+```
+
+Another example (with for loop):
+To calculate the sum of numbers from 1 to 10, I will use a for loop.
+```python
+sum = 0
+for i in range(1, 11):
+    sum += i
+print(f"The sum of numbers from 1 to 10 is {sum}")
 ```
 
 In addition to the Python Standard Library and any functions you have already written, you can use the following functions:
@@ -92,6 +117,7 @@ DEFAULT_NO_THOUGHTS_PROMPT = """Your previous response provided code without exp
 The code you provided will be executed below.
 
 Now, describe the next step you will take to address the original goal: {goal}"""
+
 # --- Updated System Prompt ---
 # Guides the LLM towards a Thought -> Code -> Observation cycle
 class CodeActAgent(Workflow):
@@ -111,6 +137,7 @@ class CodeActAgent(Workflow):
         system_prompt: Optional[str] = None,
         user_prompt: Optional[str] = None,
         always_screenshot: bool = True,
+        always_ui: bool = False,
         *args,
         **kwargs
     ):
@@ -135,6 +162,7 @@ class CodeActAgent(Workflow):
         self.steps_counter = 0 # Initialize step counter
         self.code_exec_counter = 0 # Initialize execution counter
         self.always_screenshot = always_screenshot # Flag to send screenshot with every prompt
+        self.always_ui = always_ui # Flag to always send UI elements
         logger.info("✅ CodeActAgent initialized successfully.")
 
     def parse_tool_descriptions(self) -> str:
@@ -158,35 +186,47 @@ class CodeActAgent(Workflow):
 
     def _extract_code_and_thought(self, response_text: str) -> Tuple[Optional[str], str]:
         """
-        Extracts code from Markdown blocks (```python ... ```) and the surrounding text (thought).
+        Extracts code from Markdown blocks (```python ... ```) and the surrounding text (thought),
+        handling indented code blocks.
 
         Returns:
             Tuple[Optional[code_string], thought_string]
         """
         logger.debug("✂️ Extracting code and thought from response...")
-        code_pattern = r"```python\s*\n(.*?)\n```"
-        code_matches = list(re.finditer(code_pattern, response_text, re.DOTALL))
+        code_pattern = r"^\s*```python\s*\n(.*?)\n^\s*```\s*?$" # Added ^\s*, re.MULTILINE, and made closing fence match more robust
+        # Use re.DOTALL to make '.' match newlines and re.MULTILINE to make '^' match start of lines
+        code_matches = list(re.finditer(code_pattern, response_text, re.DOTALL | re.MULTILINE))
 
         if not code_matches:
             # No code found, the entire response is thought
             logger.debug("  - No code block found. Entire response is thought.")
             return None, response_text.strip()
 
-        # Combine all extracted code blocks
-        extracted_code = "\n\n".join([match.group(1).strip() for match in code_matches])
-        logger.debug(f"  - Extracted code:\n```python\n{extracted_code}\n```")
+        extracted_code_parts = []
+        for match in code_matches:
+             # group(1) is the (.*?) part - the actual code content
+             code_content = match.group(1)
+             extracted_code_parts.append(code_content) # Keep original indentation for now
+             logger.debug(f"  - Matched code block:\n---\n{code_content}\n---")
 
-        # Extract thought text (text before the first code block and after the last)
+        extracted_code = "\n\n".join(extracted_code_parts)
+        logger.debug(f"  - Combined extracted code:\n```python\n{extracted_code}\n```")
+
+
+        # Extract thought text (text before the first code block, between blocks, and after the last)
         thought_parts = []
         last_end = 0
         for match in code_matches:
-            start, end = match.span()
+            # Use span(0) to get the start/end of the *entire* match (including fences and indentation)
+            start, end = match.span(0)
             thought_parts.append(response_text[last_end:start])
             last_end = end
         thought_parts.append(response_text[last_end:]) # Text after the last block
 
         thought_text = "".join(thought_parts).strip()
-        logger.debug(f"  - Extracted thought: {thought_text}...")
+        # Avoid overly long debug messages for thought
+        thought_preview = (thought_text[:100] + '...') if len(thought_text) > 100 else thought_text
+        logger.debug(f"  - Extracted thought: {thought_preview}")
 
         return extracted_code, thought_text
 
@@ -290,21 +330,77 @@ class CodeActAgent(Workflow):
         logger.info("  - Added execution result to memory.")
         return InputEvent(input=self.memory.get())
 
-
     async def _get_llm_response(self, chat_history: List[ChatMessage]) -> ChatResponse:
         """Get streaming response from LLM."""
         logger.debug(f"  - Sending {len(chat_history)} messages to LLM.")
         # Combine system prompt with chat history
         if self.always_screenshot:
-            await self.tools.take_screenshot()
-        if self.tools.last_screenshot:
-            image_block = ImageBlock(image=base64.b64encode(self.tools.last_screenshot))
-            self.tools.last_screenshot = None
-            chat_history = chat_history.copy() # Create a copy of chat history to avoid modifying the original
-            chat_history[-1].blocks.append(image_block)
-        messages_to_send = [self.system_prompt] + chat_history
+            chat_history = await add_screenshot_image_block(self.tools, chat_history)
+            self.tools.last_screenshot = None # Reset last screenshot after sending it
+        elif self.tools.last_screenshot:
+            chat_history = await add_screenshot(chat_history, self.tools.last_screenshot)
+            self.tools.last_screenshot = None # Reset last screenshot after sending it
+        if self.always_ui:
+            chat_history = await add_ui_text_block(self.tools, chat_history)
+        
+        messages_to_send = [self.system_prompt] + chat_history 
         response = await self.llm.achat(
             messages=messages_to_send
         )
         logger.debug("  - Received response from LLM.")
         return response
+    
+async def add_ui_text_block(tools: 'Tools', chat_history: List[ChatMessage], retry = 5) -> List[ChatMessage]:
+    """Add UI elements to the chat history without modifying the original."""
+    ui_elements = None
+    for i in range(retry):
+        try:
+            ui_elements = await tools.get_clickables()
+            if ui_elements:
+                break
+        except Exception as e:
+            if i < 4:
+                logger.warning(f"  - Error getting UI elements: {e}. Retrying...")
+            else:
+                logger.error(f"  - Error getting UI elements: {e}. No UI elements will be sent.")
+    if ui_elements:
+        ui_block = TextBlock(text="\nCurrent Clickable UI elements from the device using the custom TopViewService:\n```json\n" + json.dumps(ui_elements) + "\n```\n")
+        chat_history = chat_history.copy()
+        chat_history[-1] = message_copy(chat_history[-1])
+        chat_history[-1].blocks.append(ui_block)
+    return chat_history
+
+async def add_screenshot_image_block(tools: 'Tools', chat_history: List[ChatMessage], retry: int = 5) -> None:
+    screenshot = await take_screenshot(tools, retry)
+    if screenshot:
+        image_block = ImageBlock(image=base64.b64encode(screenshot))
+        chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
+        chat_history[-1] = message_copy(chat_history[-1])
+        chat_history[-1].blocks.append(image_block)
+    return chat_history
+
+
+async def take_screenshot(tools: 'Tools', retry: int = 5) -> None:
+    """Take a screenshot and return the image."""
+    # Retry taking screenshot
+    tools.last_screenshot = None
+    for i in range(retry):
+        try:
+            await tools.take_screenshot()
+            if tools.last_screenshot:
+                break
+        except Exception as e:
+            if i < 4:
+                logger.warning(f"  - Error taking screenshot: {e}. Retrying...")
+            else:
+                logger.error(f"  - Error taking screenshot: {e}. No screenshot will be sent.")
+                return None
+    return tools.last_screenshot
+
+async def add_screenshot(chat_history: List[ChatMessage], screenshot) -> List[ChatMessage]:
+    """Add a screenshot to the chat history."""
+    image_block = ImageBlock(image=base64.b64encode(screenshot))
+    chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
+    chat_history[-1] = message_copy(chat_history[-1])
+    chat_history[-1].blocks.append(image_block)
+    return chat_history
