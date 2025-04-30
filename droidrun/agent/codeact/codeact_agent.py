@@ -4,6 +4,7 @@ import logging
 import re
 import inspect
 from enum import Enum
+import time
 from typing import Awaitable, Callable, List, Optional, Dict, Any, Tuple, TYPE_CHECKING, Union
 
 # LlamaIndex imports for LLM interaction and types
@@ -344,9 +345,29 @@ class CodeActAgent(Workflow):
             chat_history = await add_ui_text_block(self.tools, chat_history)
         
         messages_to_send = [self.system_prompt] + chat_history 
-        response = await self.llm.achat(
-            messages=messages_to_send
-        )
+        try:
+            response = await self.llm.achat(
+                messages=messages_to_send
+            )
+            assert hasattr(response, "message"), f"LLM response does not have a message attribute.\nResponse: {response}"
+        except Exception as e:
+            if self.llm.class_name() == "Gemini_LLM" and "You exceeded your current quota" in str(e):
+                    s = str(e._details[2])
+                    match = re.search(r'seconds:\s*(\d+)', s)
+                    if match:
+                        seconds = int(match.group(1)) + 1
+                        logger.error(f"Rate limit error. Retrying in {seconds} seconds...")
+                        time.sleep(seconds)
+                    else:
+                        logger.error(f"Rate limit error. Retrying in 5 seconds...")
+                        time.sleep(40)
+                    response = await self.llm.achat(
+                        messages=messages_to_send
+                    )
+            else:
+                logger.error(f"Error getting LLM response: {e}")
+                return StopEvent(result={'finished': True, 'message': f"Error getting LLM response: {e}", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
+        #time.sleep(3)
         logger.debug("  - Received response from LLM.")
         return response
     

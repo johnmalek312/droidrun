@@ -267,13 +267,29 @@ async def setup(path: str, device: str | None):
 if __name__ == '__main__':
     model = "models/gemini-2.5-flash-preview-04-17"
     provider = "Gemini"
-    command = "Delete the following expenses from pro expense: Stationery, Side Business, Pet Supplies."
-    provider = "OpenAI"
-    model = "o4-mini"
+    command = """Add the following expenses into the pro expense:
+Expense: Stationery
+ amount_dollars: $170.49
+ category_name: Others
+ note: Urgent
+
+Expense: Side Business
+ amount_dollars: $66.97
+ category_name: Income
+ note: A need
+
+Expense: Pet Supplies
+ amount_dollars: $153.28
+ category_name: Others
+ note: Urgent"""
+    #provider = "OpenAI"
+    #model = "o4-mini"
     #command = "there is an orange dot or circle on the screen, tap on it with tap_by_coordinates() function"
     #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
+    #command = "open the draw app and draw a colorful house with multiple different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
+    command = "Merge the contents of Markor notes great_house_2023_05_06.md, edited_safe_guitar.md and 2023_04_12_clever_nest.txt (in the same order) into a new Markor note named Br1VjArn and save it. Add a new line between the content of each note."
     temperature = 0
-    steps = 30
+    steps = 50
     vision = False # Set to false to remove screenshot tool
     always_screnshot = True # Set to true to always send screenshot with prompt
     always_ui = True # Set to true to always use UI tools

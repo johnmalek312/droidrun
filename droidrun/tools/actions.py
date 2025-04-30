@@ -587,7 +587,7 @@ class Tools:
     ) -> bool:
         """
         Performs a straight-line swipe gesture on the device screen.
-        
+        To perform a hold (long press), set the start and end coordinates to the same values and increase the duration as needed.        
         Args:
             start_x: Starting X coordinate
             start_y: Starting Y coordinate
