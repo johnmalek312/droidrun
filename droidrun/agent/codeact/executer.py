@@ -36,7 +36,9 @@ class SimpleCodeExecutor:
             globals[tool_name] = tool_function
 
 
-
+        # add time to globals
+        import time
+        globals['time'] = time
         # State that persists between executions
         self.globals = globals
         self.locals = locals
@@ -61,7 +63,6 @@ class SimpleCodeExecutor:
         stderr = io.StringIO()
 
         output = ""
-        return_value = None
         try:
             # Execute with captured output
             with contextlib.redirect_stdout(
@@ -79,9 +80,6 @@ class SimpleCodeExecutor:
             # Capture exception information
             output = f"Error: {type(e).__name__}: {str(e)}\n"
             output += traceback.format_exc()
-
-        if return_value is not None:
-            output += "\n\n" + str(return_value)
 
         return output
     

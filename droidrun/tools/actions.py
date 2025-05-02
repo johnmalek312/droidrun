@@ -536,7 +536,7 @@ class Tools:
             return f"Error: {str(e)}"
 
     # Rename the old tap function to tap_by_coordinates for backward compatibility
-    async def tap_by_coordinates(self, x: int, y: int) -> str | bool:
+    async def tap_by_coordinates(self, x: int, y: int) -> bool:
         """
         Tap on the device screen at specific coordinates. 
         
@@ -545,7 +545,7 @@ class Tools:
             y: Y coordinate
         
         Returns:
-            True on success, or an error message string on failure.
+            Bool indicating success or failure
         """
         try:
             if self.serial:
@@ -557,9 +557,11 @@ class Tools:
                 device = await self.get_device()
             
             await device.tap(x, y)
+            print(f"Tapped at coordinates ({x}, {y})")
             return True
         except ValueError as e:
-            return f"Error: {str(e)}"
+            print(f"Error: {str(e)}")
+            return False
 
     # Replace the old tap function with the new one
     async def tap(self, index: int) -> str:
@@ -595,7 +597,7 @@ class Tools:
             end_y: Ending Y coordinate
             duration_ms: Duration of swipe in milliseconds
         Returns:
-            True on success, or an error message string on failure.
+            Bool indicating success or failure
         """
         try:
             if self.serial:
@@ -609,7 +611,8 @@ class Tools:
             await device.swipe(start_x, start_y, end_x, end_y, duration_ms)
             return True
         except ValueError as e:
-            return f"Error: {str(e)}"
+            print(f"Error: {str(e)}")
+            return False
 
     async def input_text(self, text: str) -> str:
         """
@@ -855,8 +858,7 @@ class Tools:
             # Parse the package list using the function
             packages = self.parse_package_list(output)            
             # Format package list for better readability
-            package_list = [pack["package"] for pack in packages]
-            
+            package_list = [pack["package"] for pack in packages]            
             return package_list
         except ValueError as e:
             raise ValueError(f"Error listing packages: {str(e)}")

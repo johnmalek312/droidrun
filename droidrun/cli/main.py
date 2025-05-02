@@ -13,7 +13,6 @@ if __name__ == "__main__":
 
 
 
-
 import asyncio
 import click
 import os
@@ -282,12 +281,14 @@ Expense: Pet Supplies
  amount_dollars: $153.28
  category_name: Others
  note: Urgent"""
+    #provider = "Anthropic"
+    #model = "claude-3-7-sonnet-latest"
     #provider = "OpenAI"
-    #model = "o4-mini"
+    #model = "gpt-4.1"
     #command = "there is an orange dot or circle on the screen, tap on it with tap_by_coordinates() function"
     #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     #command = "open the draw app and draw a colorful house with multiple different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
-    command = "Merge the contents of Markor notes great_house_2023_05_06.md, edited_safe_guitar.md and 2023_04_12_clever_nest.txt (in the same order) into a new Markor note named Br1VjArn and save it. Add a new line between the content of each note."
+    command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
     temperature = 0
     steps = 50
     vision = False # Set to false to remove screenshot tool

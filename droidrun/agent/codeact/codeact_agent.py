@@ -13,7 +13,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.core.llms.llm import LLM
 from llama_index.core.workflow import Workflow, StartEvent, StopEvent, Context, step
 from llama_index.core.memory import ChatMemoryBuffer
-from .events import InputEvent, ModelOutputEvent, ExecutionEvent, ExecutionResultEvent
+from .events import FinalizeEvent, InputEvent, ModelOutputEvent, ExecutionEvent, ExecutionResultEvent
 from llama_index.core import set_global_handler
 set_global_handler("arize_phoenix")
 # Load environment variables (for API key)
@@ -66,7 +66,7 @@ You will be given a task to perform. You should output:
 - Python code wrapped in ``` tags that provides the solution to the task, or a step towards the solution. Any output you want to extract from the code should be printed to the console.
 - Text to be shown directly to the user, if you want to ask for more information or provide the final answer.
 - If the previous code execution can be used to respond to the user, then respond directly (typically you want to avoid mentioning anything related to the code execution in your response).
-
+- If you output thoughts without code or empty code, the program will assume you are done and will stop execution, so if you want to provide empty code with thoughts, just write time.sleep(1) in a code block to avoid this.
 
 ## Response Format:
 Example of proper code format:
@@ -96,6 +96,8 @@ In addition to the Python Standard Library and any functions you have already wr
 
 Most functions return a value, inorder to see the result of the function, you MUST print it.
 Some functions may be bound instance methods, so if you encounter error you might think they need an extra parameter (self) but they don't.
+You'll receive a screenshot showing the current screen and its UI elements to help you complete the task. However, screenshots won’t be saved in the chat history. So, make sure to describe what you see and explain the key parts of your plan in your thoughts, as those will be saved and used to assist you in future steps.
+
 ## Final Answer Guidelines:
 - When providing a final answer, focus on directly answering the user's question
 - Avoid referencing the code you generated unless specifically asked
@@ -159,7 +161,7 @@ class CodeActAgent(Workflow):
         self.system_prompt = ChatMessage(role="system", content=PromptTemplate(system_prompt or DEFAULT_CODE_ACT_SYSTEM_PROMPT).format(tool_descriptions=self.tool_descriptions))
         self.user_prompt = ChatMessage(role="user", content=PromptTemplate(user_prompt or DEFAULT_CODE_ACT_USER_PROMPT).format(goal=goal))
         self.no_thoughts_prompt = ChatMessage(role="user", content=PromptTemplate(DEFAULT_NO_THOUGHTS_PROMPT).format(goal=goal))
-        self.memory = ChatMemoryBuffer.from_defaults(llm=self.llm) # Initialize memory buffer
+        self.memory = None 
         self.steps_counter = 0 # Initialize step counter
         self.code_exec_counter = 0 # Initialize execution counter
         self.always_screenshot = always_screenshot # Flag to send screenshot with every prompt
@@ -236,24 +238,24 @@ class CodeActAgent(Workflow):
         """Prepare chat history from user input."""
         logger.info("💬 Preparing chat history...")
         # Get or create memory
-        memory: ChatMemoryBuffer = await ctx.get(
+        self.memory: ChatMemoryBuffer = await ctx.get(
             "memory", default=ChatMemoryBuffer.from_defaults(llm=self.llm)
         )
         user_input = ev.get("input", default=None)
-        assert len(memory.get_all()) > 0 or user_input or self.user_prompt, "Memory input, user prompt or user input cannot be empty."
+        assert len(self.memory.get_all()) > 0 or user_input or self.user_prompt, "Memory input, user prompt or user input cannot be empty."
         # Add user input to memory
         logger.info("  - Adding goal to memory.")
         if user_input:
-            await memory.aput(ChatMessage(role="user", content=user_input))
+            await self.memory.aput(ChatMessage(role="user", content=user_input))
         elif self.user_prompt:
             # Add user prompt to memory
-            await memory.aput(self.user_prompt)
+            await self.memory.aput(self.user_prompt)
         # Update context
-        await ctx.set("memory", memory)
-        input_messages = memory.get()
+        await ctx.set("memory", self.memory)
+        input_messages = self.memory.get()
         return InputEvent(input=input_messages)
     @step
-    async def handle_llm_input(self, ev: InputEvent, ctx: Context) -> Union[ModelOutputEvent, StopEvent]:
+    async def handle_llm_input(self, ev: InputEvent, ctx: Context) -> Union[ModelOutputEvent, FinalizeEvent]:
         """Handle LLM input."""
         # Get chat history from event
         chat_history = ev.input
@@ -263,7 +265,7 @@ class CodeActAgent(Workflow):
         logger.info(f"🧠 Step {self.steps_counter}/{self.max_steps}: Calling LLM...")
         if self.steps_counter > self.max_steps:
             logger.warning(f"🚫 Max steps ({self.max_steps}) reached. Stopping execution.")
-            return StopEvent(result={'finished':True, 'message':"Max steps reached. Stopping execution.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
+            return FinalizeEvent(result={'finished':True, 'message':"Max steps reached. Stopping execution.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
         # Get LLM response
         response = await self._get_llm_response(chat_history)
         # Add response to memory
@@ -274,7 +276,7 @@ class CodeActAgent(Workflow):
         return ModelOutputEvent(thoughts=thoughts, code=code)
 
     @step
-    async def handle_llm_output(self, ev: ModelOutputEvent, ctx: Context) -> Union[ExecutionEvent, StopEvent]:
+    async def handle_llm_output(self, ev: ModelOutputEvent, ctx: Context) -> Union[ExecutionEvent, FinalizeEvent]:
         """Handle LLM output."""
         logger.info("⚙️ Handling LLM output...")
         # Get code and thoughts from event
@@ -295,7 +297,7 @@ class CodeActAgent(Workflow):
         else:
             final_message = thoughts or "No code provided and no final message."
             logger.info(f"✅ No code to execute. Stopping workflow. Final Message: {final_message}...")
-            return StopEvent(result={'finished': True, 'message': final_message, 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
+            return FinalizeEvent(result={'finished': True, 'message': final_message, 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
 
     @step
     async def execute_code(self, ev: ExecutionEvent, ctx: Context) -> ExecutionResultEvent:
@@ -330,6 +332,14 @@ class CodeActAgent(Workflow):
         await self.memory.aput(observation_message)
         logger.info("  - Added execution result to memory.")
         return InputEvent(input=self.memory.get())
+    
+
+    @step
+    async def finalize(self, ev: FinalizeEvent, ctx: Context) -> StopEvent:
+        """Finalize the workflow."""
+        logger.info("🔚 Finalizing workflow...")
+        ctx.set("memory", self.memory) # Ensure memory is set in context
+        return StopEvent(result=ev.result)
 
     async def _get_llm_response(self, chat_history: List[ChatMessage]) -> ChatResponse:
         """Get streaming response from LLM."""
@@ -337,7 +347,6 @@ class CodeActAgent(Workflow):
         # Combine system prompt with chat history
         if self.always_screenshot:
             chat_history = await add_screenshot_image_block(self.tools, chat_history)
-            self.tools.last_screenshot = None # Reset last screenshot after sending it
         elif self.tools.last_screenshot:
             chat_history = await add_screenshot(chat_history, self.tools.last_screenshot)
             self.tools.last_screenshot = None # Reset last screenshot after sending it
@@ -416,7 +425,9 @@ async def take_screenshot(tools: 'Tools', retry: int = 5) -> None:
             else:
                 logger.error(f"  - Error taking screenshot: {e}. No screenshot will be sent.")
                 return None
-    return tools.last_screenshot
+    screenshot = tools.last_screenshot
+    tools.last_screenshot = None # Reset last screenshot after taking it
+    return screenshot
 
 async def add_screenshot(chat_history: List[ChatMessage], screenshot) -> List[ChatMessage]:
     """Add a screenshot to the chat history."""
