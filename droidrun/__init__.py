@@ -6,7 +6,7 @@ __version__ = "0.1.0"
 
 # Import main classes for easier access
 from .agent.codeact.codeact_agent import CodeActAgent as Agent
-from .agent.codeact.executer import SimpleCodeExecutor
+from .agent.utils.executer import SimpleCodeExecutor
 from .agent.utils.llm_picker import load_llm
 from .tools.device import DeviceManager
 from .tools.actions import Tools
