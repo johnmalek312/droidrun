@@ -50,7 +50,6 @@ You will be given a task to perform. You should output:
 - Text to be shown directly to the user, if you want to ask for more information or provide the final answer.
 - If the previous code execution can be used to respond to the user, then respond directly (typically you want to avoid mentioning anything related to the code execution in your response).
 - If you task is complete, you should use the complete(success:bool, reason:str) function within a code block to mark it as finished. The success parameter should be True if the task was completed successfully, and False otherwise. The reason parameter should be a string explaining the reason for failure if failed.
-
 ## Response Format:
 Example of proper code format:
 To calculate the area of a circle, I need to use the formula: area = pi * radius^2. I will write a function to do this.
@@ -62,7 +61,7 @@ def calculate_area(radius):
 
 # Calculate the area for radius = 5
 area = calculate_area(5)
-print(f"The area of the circle is {area:.2f} square units")
+print(f"The area of the circle is {{area:.2f}} square units")
 ```
 
 Another example (with for loop):
@@ -71,15 +70,17 @@ To calculate the sum of numbers from 1 to 10, I will use a for loop.
 sum = 0
 for i in range(1, 11):
     sum += i
-print(f"The sum of numbers from 1 to 10 is {sum}")
+print(f"The sum of numbers from 1 to 10 is {{sum}}")
 ```
 
 In addition to the Python Standard Library and any functions you have already written, you can use the following functions:
 {tool_descriptions}
 
-Most functions return a value, inorder to see the result of the function, you MUST print it.
-Some functions may be bound instance methods, so if you encounter error you might think they need an extra parameter (self) but they don't.
 You'll receive a screenshot showing the current screen and its UI elements to help you complete the task. However, screenshots won’t be saved in the chat history. So, make sure to describe what you see and explain the key parts of your plan in your thoughts, as those will be saved and used to assist you in future steps.
+
+**Important Notes:**
+- If there is a precondition for the task, you MUST check if it is met.
+- If a goal's precondition is unmet, fail the task by calling `complete(success=False, reason='...')` with an explanation.
 
 ## Final Answer Guidelines:
 - When providing a final answer, focus on directly answering the user's question
@@ -94,9 +95,9 @@ You MUST ALWAYS to include your reasoning and thought process outside of the cod
 """
 
 DEFAULT_CODE_ACT_USER_PROMPT = """**Current Request:**
-Goal: {goal}
+{goal}
 
-**What is your reasoning and the next step to address this request?** Explain your plan first, then provide code in ```python ... ``` tags if needed."""
+**Is the precondition met? What is your reasoning and the next step to address this request?** Explain your thought process then provide code in ```python ... ``` tags if needed."""""
 
 DEFAULT_NO_THOUGHTS_PROMPT = """Your previous response provided code without explaining your reasoning first. Remember to always describe your thought process and plan *before* providing the code block.
 
@@ -138,7 +139,8 @@ class CodeActAgent(Workflow):
         self.tools = tools
         self.max_steps = max_steps
         self.tool_descriptions = self.parse_tool_descriptions() # Parse tool descriptions once at initialization
-        self.system_prompt = ChatMessage(role="system", content=PromptTemplate(system_prompt or DEFAULT_CODE_ACT_SYSTEM_PROMPT).format(tool_descriptions=self.tool_descriptions))
+        self.system_prompt_content = DEFAULT_CODE_ACT_SYSTEM_PROMPT.format(tool_descriptions=self.tool_descriptions)
+        self.system_prompt = ChatMessage(role="system", content=self.system_prompt_content)
         self.user_prompt = None
         self.no_thoughts_prompt = None
         self.memory = None 
@@ -320,6 +322,7 @@ class CodeActAgent(Workflow):
     @step
     async def finalize(self, ev: FinalizeEvent, ctx: Context) -> StopEvent:
         """Finalize the workflow."""
+        self.tools.finished = False # Reset finished flag
         logger.info("🔚 Finalizing workflow...")
         await ctx.set("memory", self.memory) # Ensure memory is set in context
         return StopEvent(result=ev.result)
@@ -337,6 +340,9 @@ class CodeActAgent(Workflow):
             chat_history = await add_ui_text_block(self.tools, chat_history)
         
         messages_to_send = [self.system_prompt] + chat_history 
+
+        # llama-index bug modifies the original messages for some models (e.g. Gemini possibly claude too)
+        messages_to_send = [message_copy(msg) for msg in messages_to_send]
         try:
             response = await self.llm.achat(
                 messages=messages_to_send

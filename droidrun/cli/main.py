@@ -291,7 +291,23 @@ Expense: Pet Supplies
     #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     #command = "open the draw app and draw a colorful house with multiple different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
-    command = "Delete the file proud_banana_copy.mp3 from the Android filesystem located in the Recordings folder within the sdk_gphone_x86_64 storage area."
+    command = "Turn brightness to the max value."
+    command = "Delete all but one of any expenses in pro expense that are exact duplicates, ensuring at least one instance of each unique expense remains."
+    command = """Add the following expenses into the pro expense:
+Expense: Stationery
+ amount_dollars: $170.49
+ category_name: Others
+ note: Urgent
+
+Expense: Side Business
+ amount_dollars: $66.97
+ category_name: Income
+ note: A need
+
+Expense: Pet Supplies
+ amount_dollars: $153.28
+ category_name: Others
+ note: Urgent"""
     temperature = 0
     steps = 50
     vision = False # Set to false to remove screenshot tool
