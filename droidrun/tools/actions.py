@@ -23,6 +23,9 @@ class Tools:
         self.serial = serial
         self.device_manager = DeviceManager()
         self.last_screenshot = None
+        self.reason = None
+        self.success = None
+        self.finished = False
 
     def get_device_serial(self) -> str:
         """Get the device serial from environment variable."""
@@ -1088,3 +1091,22 @@ class Tools:
             return f"Error: {str(e)}"
         except Exception as e:
             return f"Error sending clear drawings command: {str(e)}"
+        
+    def complete(self, success: bool, reason: str = ""):
+        """
+        Mark the task as finished.
+
+        Args:
+            success: Indicates if the task was successful.
+            reason: Reason for failure, if any. (required if success is False)
+        """
+        if success:
+            self.success = True
+            self.reason = self.reason or "Task completed successfully."
+            self.finished = True
+        else:
+            self.success = False
+            if not reason:
+                raise ValueError("Reason for failure is required if success is False.")
+            self.reason = reason
+            self.finished = True

@@ -18,8 +18,10 @@ import click
 import os
 from rich.console import Console
 from ..tools import DeviceManager, Tools, load_tools # Import the loader
-from ..agent.codeact import CodeActAgent, SimpleCodeExecutor
+from ..agent.codeact import CodeActAgent
 from ..agent.utils.llm_picker import load_llm
+from ..agent.utils.executer import SimpleCodeExecutor
+from ..agent.planner import PlannerAgent
 from functools import wraps
 
 # Import the install_app function directly for the setup command
@@ -75,7 +77,6 @@ async def run_command(command: str, device: str | None, provider: str, model: st
         # Create and run the agent
         console.print("[bold blue]Running CodeAct agent...[/]")
         agent = CodeActAgent(
-            goal=command,
             llm=llm,
             code_execute_fn=executor.execute,
             available_tools=tool_list.values(),
@@ -85,10 +86,11 @@ async def run_command(command: str, device: str | None, provider: str, model: st
             always_ui=always_ui,
             timeout=1000
         )
+        planner = PlannerAgent(goal=command, agent=agent, llm=llm, tools_instance=tools_instance, timeout=10000)
         console.print("[yellow]Press Ctrl+C to stop execution[/]")
 
         try:
-            await agent.run()
+            await planner.run()
         except KeyboardInterrupt:
             console.print("\n[bold red]Execution stopped by user.[/]")
         except ValueError as e:
@@ -105,8 +107,8 @@ async def run_command(command: str, device: str | None, provider: str, model: st
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred during setup:[/] {e}")
         # Consider adding traceback logging here for debugging
-        # import traceback
-        # console.print(traceback.format_exc())
+        import traceback
+        console.print(traceback.format_exc())
 
 
 
@@ -289,6 +291,7 @@ Expense: Pet Supplies
     #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     #command = "open the draw app and draw a colorful house with multiple different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
+    command = "Delete the file proud_banana_copy.mp3 from the Android filesystem located in the Recordings folder within the sdk_gphone_x86_64 storage area."
     temperature = 0
     steps = 50
     vision = False # Set to false to remove screenshot tool

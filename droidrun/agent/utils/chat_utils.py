@@ -34,7 +34,7 @@ def message_copy(message: ChatMessage, deep = True) -> ChatMessage:
 
 
 
-async def add_ui_text_block(tools: 'Tools', chat_history: List[ChatMessage], retry = 5) -> List[ChatMessage]:
+async def add_ui_text_block(tools: 'Tools', chat_history: List[ChatMessage], retry = 5, copy = True) -> List[ChatMessage]:
     """Add UI elements to the chat history without modifying the original."""
     ui_elements = None
     for i in range(retry):
@@ -49,17 +49,19 @@ async def add_ui_text_block(tools: 'Tools', chat_history: List[ChatMessage], ret
                 logger.error(f"  - Error getting UI elements: {e}. No UI elements will be sent.")
     if ui_elements:
         ui_block = TextBlock(text="\nCurrent Clickable UI elements from the device using the custom TopViewService:\n```json\n" + json.dumps(ui_elements) + "\n```\n")
-        chat_history = chat_history.copy()
-        chat_history[-1] = message_copy(chat_history[-1])
+        if copy:
+            chat_history = chat_history.copy()
+            chat_history[-1] = message_copy(chat_history[-1])
         chat_history[-1].blocks.append(ui_block)
     return chat_history
 
-async def add_screenshot_image_block(tools: 'Tools', chat_history: List[ChatMessage], retry: int = 5) -> None:
+async def add_screenshot_image_block(tools: 'Tools', chat_history: List[ChatMessage], retry: int = 5, copy = True) -> None:
     screenshot = await take_screenshot(tools, retry)
     if screenshot:
         image_block = ImageBlock(image=base64.b64encode(screenshot))
-        chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
-        chat_history[-1] = message_copy(chat_history[-1])
+        if copy:
+            chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
+            chat_history[-1] = message_copy(chat_history[-1])
         chat_history[-1].blocks.append(image_block)
     return chat_history
 
@@ -83,10 +85,11 @@ async def take_screenshot(tools: 'Tools', retry: int = 5) -> None:
     tools.last_screenshot = None # Reset last screenshot after taking it
     return screenshot
 
-async def add_screenshot(chat_history: List[ChatMessage], screenshot) -> List[ChatMessage]:
+async def add_screenshot(chat_history: List[ChatMessage], screenshot, copy = True) -> List[ChatMessage]:
     """Add a screenshot to the chat history."""
     image_block = ImageBlock(image=base64.b64encode(screenshot))
-    chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
-    chat_history[-1] = message_copy(chat_history[-1])
+    if copy:
+        chat_history[-1] = message_copy(chat_history[-1])
+        chat_history = chat_history.copy()  # Create a copy of chat history to avoid modifying the original
     chat_history[-1].blocks.append(image_block)
     return chat_history

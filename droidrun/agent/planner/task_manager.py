@@ -149,7 +149,7 @@ class TaskManager:
     def get_pending_tasks(self) -> list[dict]:
         return self.get_tasks_by_status(self.STATUS_PENDING)
 
-    def get_attempting_task(self) -> dict:
+    def get_attempting_task(self) -> dict | None:
         attempting_tasks = self.get_tasks_by_status(self.STATUS_ATTEMPTING)
         if attempting_tasks:
             return attempting_tasks[0]
@@ -159,7 +159,7 @@ class TaskManager:
     def get_completed_tasks(self) -> list[dict]:
         return self.get_tasks_by_status(self.STATUS_COMPLETED)
 
-    def get_failed_tasks(self) -> dict:
+    def get_failed_tasks(self) -> dict | None:
         attempting_tasks = self.get_tasks_by_status(self.STATUS_FAILED)
         if attempting_tasks:
             return attempting_tasks[0]

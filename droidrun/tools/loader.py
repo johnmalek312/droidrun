@@ -52,7 +52,7 @@ async def load_tools(serial: Optional[str] = None, vision: bool = False, always_
         #"install_app": tools_instance.install_app,
         #"uninstall_app": tools_instance.uninstall_app,
         "list_packages": tools_instance.list_packages,
-
+        "complete": tools_instance.complete
         # Data extraction
         #"extract": tools_instance.extract # not very useful for now
     }

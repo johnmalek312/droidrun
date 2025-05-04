@@ -28,12 +28,25 @@ class SimpleCodeExecutor:
 
         # loop throught tools and add them to globals, but before that check if tool value is async, if so convert it to sync. tools is a dictionary of tool name: function
         # e.g. tools = {'tool_name': tool_function}
-        for tool_name, tool_function in tools.items():
-            if asyncio.iscoroutinefunction(tool_function):
-                # If the function is async, convert it to sync
-                tool_function = async_to_sync(tool_function)
-            # Add the tool to globals
-            globals[tool_name] = tool_function
+        
+        # check if tools is a dictionary
+        if isinstance(tools, dict):
+            for tool_name, tool_function in tools.items():
+                if asyncio.iscoroutinefunction(tool_function):
+                    # If the function is async, convert it to sync
+                    tool_function = async_to_sync(tool_function)
+                # Add the tool to globals
+                globals[tool_name] = tool_function
+        elif isinstance(tools, list):
+            # If tools is a list, convert it to a dictionary with tool name as key and function as value
+            for tool in tools:
+                if asyncio.iscoroutinefunction(tool):
+                    # If the function is async, convert it to sync
+                    tool = async_to_sync(tool)
+                # Add the tool to globals
+                globals[tool.__name__] = tool
+        else:
+            raise ValueError("Tools must be a dictionary or a list of functions.")
 
 
         # add time to globals

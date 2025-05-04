@@ -15,11 +15,6 @@ from llama_index.core.workflow import Workflow, StartEvent, StopEvent, Context, 
 from llama_index.core.memory import ChatMemoryBuffer
 from .events import FinalizeEvent, InputEvent, ModelOutputEvent, ExecutionEvent, ExecutionResultEvent
 from ..utils.chat_utils import add_screenshot, add_screenshot_image_block, add_ui_text_block, message_copy
-from llama_index.core import set_global_handler
-set_global_handler("arize_phoenix")
-# Load environment variables (for API key)
-from dotenv import load_dotenv
-load_dotenv()
 
 if TYPE_CHECKING:
     from ...tools import Tools
@@ -54,7 +49,7 @@ You will be given a task to perform. You should output:
 - Python code wrapped in ``` tags that provides the solution to the task, or a step towards the solution. Any output you want to extract from the code should be printed to the console.
 - Text to be shown directly to the user, if you want to ask for more information or provide the final answer.
 - If the previous code execution can be used to respond to the user, then respond directly (typically you want to avoid mentioning anything related to the code execution in your response).
-- If you output thoughts without code or empty code, the program will assume you are done and will stop execution, so if you want to provide empty code with thoughts, just write time.sleep(1) in a code block to avoid this.
+- If you task is complete, you should use the complete(success:bool, reason:str) function within a code block to mark it as finished. The success parameter should be True if the task was completed successfully, and False otherwise. The reason parameter should be a string explaining the reason for failure if failed.
 
 ## Response Format:
 Example of proper code format:
@@ -119,7 +114,6 @@ class CodeActAgent(Workflow):
     """
     def __init__(
         self,
-        goal: str,
         llm: LLM,
         code_execute_fn: Callable[[str], Awaitable[Dict[str, Any]]],
         tools: 'Tools',
@@ -135,7 +129,6 @@ class CodeActAgent(Workflow):
         # assert instead of if
         assert llm, "llm must be provided."
         assert code_execute_fn, "code_execute_fn must be provided"
-        assert goal, "goal must be provided."
         assert max_steps > 0, "max_steps must be greater than 0."
         super().__init__(*args, **kwargs)
 
@@ -144,12 +137,12 @@ class CodeActAgent(Workflow):
         self.available_tools = available_tools or []
         self.tools = tools
         self.max_steps = max_steps
-        self.goal = goal
         self.tool_descriptions = self.parse_tool_descriptions() # Parse tool descriptions once at initialization
         self.system_prompt = ChatMessage(role="system", content=PromptTemplate(system_prompt or DEFAULT_CODE_ACT_SYSTEM_PROMPT).format(tool_descriptions=self.tool_descriptions))
-        self.user_prompt = ChatMessage(role="user", content=PromptTemplate(user_prompt or DEFAULT_CODE_ACT_USER_PROMPT).format(goal=goal))
-        self.no_thoughts_prompt = ChatMessage(role="user", content=PromptTemplate(DEFAULT_NO_THOUGHTS_PROMPT).format(goal=goal))
+        self.user_prompt = None
+        self.no_thoughts_prompt = None
         self.memory = None 
+        self.goal = None
         self.steps_counter = 0 # Initialize step counter
         self.code_exec_counter = 0 # Initialize execution counter
         self.always_screenshot = always_screenshot # Flag to send screenshot with every prompt
@@ -230,14 +223,13 @@ class CodeActAgent(Workflow):
             "memory", default=ChatMemoryBuffer.from_defaults(llm=self.llm)
         )
         user_input = ev.get("input", default=None)
-        assert len(self.memory.get_all()) > 0 or user_input or self.user_prompt, "Memory input, user prompt or user input cannot be empty."
+        assert user_input, "User input cannot be empty."
         # Add user input to memory
         logger.info("  - Adding goal to memory.")
-        if user_input:
-            await self.memory.aput(ChatMessage(role="user", content=user_input))
-        elif self.user_prompt:
-            # Add user prompt to memory
-            await self.memory.aput(self.user_prompt)
+        goal = user_input
+        self.user_message = ChatMessage(role="user", content=PromptTemplate(self.user_prompt or DEFAULT_CODE_ACT_USER_PROMPT).format(goal=goal))
+        self.no_thoughts_prompt = ChatMessage(role="user", content=PromptTemplate(DEFAULT_NO_THOUGHTS_PROMPT).format(goal=goal))
+        await self.memory.aput(self.user_message)
         # Update context
         await ctx.set("memory", self.memory)
         input_messages = self.memory.get()
@@ -253,7 +245,7 @@ class CodeActAgent(Workflow):
         logger.info(f"🧠 Step {self.steps_counter}/{self.max_steps}: Calling LLM...")
         if self.steps_counter > self.max_steps:
             logger.warning(f"🚫 Max steps ({self.max_steps}) reached. Stopping execution.")
-            return FinalizeEvent(result={'finished':True, 'message':"Max steps reached. Stopping execution.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
+            return FinalizeEvent(result={'success':False, 'reason':"Max steps of 20 reached."}) # Return final message and steps
         # Get LLM response
         response = await self._get_llm_response(chat_history)
         # Add response to memory
@@ -283,9 +275,9 @@ class CodeActAgent(Workflow):
         if code:
             return ExecutionEvent(code=code)
         else:
-            final_message = thoughts or "No code provided and no final message."
-            logger.info(f"✅ No code to execute. Stopping workflow. Final Message: {final_message}...")
-            return FinalizeEvent(result={'finished': True, 'message': final_message, 'steps': self.steps_counter, 'code_executions': self.code_exec_counter}) # Return final message and steps
+            message = ChatMessage(role="user", content="No code was provided. If you want to mark task as complete (whether it failed or succeeded), use complete(success:bool, reason:str) function within a code block ```pythn\n```.")
+            await self.memory.aput(message)
+            return InputEvent(input=self.memory.get()) 
 
     @step
     async def execute_code(self, ev: ExecutionEvent, ctx: Context) -> ExecutionResultEvent:
@@ -298,6 +290,9 @@ class CodeActAgent(Workflow):
             self.code_exec_counter += 1
             result = await self.code_execute_fn(code)
             logger.info(f"💡 Code execution successful. Result: {result}")
+            if self.tools.finished == True:
+                logger.info("  - Task completed.")
+                return FinalizeEvent(result={'success': self.tools.success, 'reason': self.tools.reason})
             return ExecutionResultEvent(output=str(result)) # Ensure output is string
         except Exception as e:
             logger.error(f"💥 Code execution failed: {e}", exc_info=True)
@@ -326,7 +321,7 @@ class CodeActAgent(Workflow):
     async def finalize(self, ev: FinalizeEvent, ctx: Context) -> StopEvent:
         """Finalize the workflow."""
         logger.info("🔚 Finalizing workflow...")
-        ctx.set("memory", self.memory) # Ensure memory is set in context
+        await ctx.set("memory", self.memory) # Ensure memory is set in context
         return StopEvent(result=ev.result)
 
     async def _get_llm_response(self, chat_history: List[ChatMessage]) -> ChatResponse:
