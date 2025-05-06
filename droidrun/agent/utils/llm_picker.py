@@ -2,7 +2,6 @@ import importlib
 import logging
 from typing import Any
 from llama_index.core.llms.llm import LLM
-
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -31,15 +30,16 @@ def load_llm(provider_name: str, **kwargs: Any) -> LLM:
     """
     if not provider_name:
         raise ValueError("provider_name cannot be empty.")
-
-    # Use lowercase for module path, handle hyphens for package name suggestion
-    lower_provider_name = provider_name.lower()
-    # Special case common variations like HuggingFaceLLM -> huggingface module
-    if lower_provider_name.endswith("llm"):
-         module_provider_part = lower_provider_name[:-3].replace("-", "_")
+    if provider_name == "OpenAILike":
+        module_provider_part = "openai_like"
     else:
-         module_provider_part = lower_provider_name.replace("-", "_")
-
+        # Use lowercase for module path, handle hyphens for package name suggestion
+        lower_provider_name = provider_name.lower()
+        # Special case common variations like HuggingFaceLLM -> huggingface module
+        if lower_provider_name.endswith("llm"):
+            module_provider_part = lower_provider_name[:-3].replace("-", "_")
+        else:
+            module_provider_part = lower_provider_name.replace("-", "_")
     module_path = f"llama_index.llms.{module_provider_part}"
     install_package_name = f"llama-index-llms-{module_provider_part.replace('_', '-')}"
 

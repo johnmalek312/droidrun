@@ -23,7 +23,6 @@ from ..agent.utils.llm_picker import load_llm
 from ..agent.utils.executer import SimpleCodeExecutor
 from ..agent.planner import PlannerAgent
 from functools import wraps
-
 # Import the install_app function directly for the setup command
 console = Console()
 device_manager = DeviceManager()
@@ -86,7 +85,7 @@ async def run_command(command: str, device: str | None, provider: str, model: st
             always_ui=always_ui,
             timeout=1000
         )
-        planner = PlannerAgent(goal=command, agent=agent, llm=llm, tools_instance=tools_instance, timeout=10000)
+        planner = PlannerAgent(goal=command, agent=agent, llm=llm, tools_instance=tools_instance, timeout=10000, max_retries=3)
         console.print("[yellow]Press Ctrl+C to stop execution[/]")
 
         try:
@@ -293,21 +292,7 @@ Expense: Pet Supplies
     command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
     command = "Turn brightness to the max value."
     command = "Delete all but one of any expenses in pro expense that are exact duplicates, ensuring at least one instance of each unique expense remains."
-    command = """Add the following expenses into the pro expense:
-Expense: Stationery
- amount_dollars: $170.49
- category_name: Others
- note: Urgent
-
-Expense: Side Business
- amount_dollars: $66.97
- category_name: Income
- note: A need
-
-Expense: Pet Supplies
- amount_dollars: $153.28
- category_name: Others
- note: Urgent"""
+    command = """Open the file task.html in Downloads in the file manager; when prompted open it with Chrome. Then create a drawing using the three colors shown at the top and hit submit."""
     temperature = 0
     steps = 50
     vision = False # Set to false to remove screenshot tool
