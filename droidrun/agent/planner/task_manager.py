@@ -1,10 +1,10 @@
 import json # For potential saving/loading later (optional)
-
+import os
+from typing import List
 class TaskManager:
     """
     Manages a list of tasks for an agent, each with a status.
     """
-
     # --- Define Status Constants ---
     STATUS_PENDING = "pending"       # Task hasn't been attempted yet
     STATUS_ATTEMPTING = "attempting" # Task is currently being worked on
@@ -17,22 +17,31 @@ class TaskManager:
         STATUS_COMPLETED,
         STATUS_FAILED
     }
-
+    # desktop path/todo.md
+    file_path = os.path.join(os.path.expanduser("~"), "Desktop", "todo.txt")
     def __init__(self):
         """Initializes an empty task list."""
         self.tasks = []  # List to store task dictionaries
-    def set_tasks(self, tasks: str):
+        self.task_completed = False 
+        self.message = None
+        self.start_execution = False
+    # self.tasks is a property, make a getter and setter for it
+    def set_tasks(self, tasks: List[str]):
         """
-        Clears the current task list and sets new tasks from a string.
-        Each task should be separated by a newline character.
+        Clears the current task list and sets new tasks from a list.
+        Each task should be a string.
 
         Args:
-            tasks: A string that contains all tasks seperated by new lines.
+            tasks: A list of strings, each representing a task.
         """
         try:
-            tasks = tasks.split("\n")
-            self.tasks = [{"description": task.strip(), "status": self.STATUS_PENDING} for task in tasks if task.strip()]
+            self.tasks = []
+            for task in tasks:
+                if not isinstance(task, str) or not task.strip():
+                    raise ValueError("Each task must be a non-empty string.")
+                self.tasks.append({"description": task.strip(), "status": self.STATUS_PENDING})
             print(f"Tasks set: {len(self.tasks)} tasks added.")
+            self.save_to_file()
         except Exception as e:
             print(f"Error setting tasks: {e}")
 
@@ -57,7 +66,9 @@ class TaskManager:
             "status": self.STATUS_PENDING
         }
         self.tasks.append(task)
+        self.save_to_file()
         print(f"Task added: {task_description} (Status: {self.STATUS_PENDING})")
+        
         return len(self.tasks) - 1 # Return the index of the new task
 
     def get_task(self, index: int):
@@ -106,6 +117,7 @@ class TaskManager:
         # get_task will raise IndexError if index is invalid
         task = self.get_task(index)
         task["status"] = new_status
+        self.save_to_file()
         # No need to re-assign task to self.tasks[index] as dictionaries are mutable
 
     def delete_task(self, index: int):
@@ -120,6 +132,7 @@ class TaskManager:
         """
         if 0 <= index < len(self.tasks):
             del self.tasks[index]
+            self.save_to_file()
         else:
             raise IndexError(f"Task index {index} out of bounds.")
 
@@ -127,6 +140,7 @@ class TaskManager:
         """Removes all tasks from the list."""
         self.tasks = []
         print("All tasks cleared.")
+        self.save_to_file()
 
     def get_tasks_by_status(self, status: str):
         """
@@ -186,19 +200,34 @@ class TaskManager:
     def __repr__(self):
         """Provides a developer-friendly representation."""
         return f"<TaskManager(task_count={len(self.tasks)}, completed={self.get_completed_tasks()}, attempting={self.get_attempting_task()}, pending={self.get_pending_tasks()})>"
-    def save_to_file(self, filename="tasks.md"):
+    def save_to_file(self, filename=file_path):
         """Saves the current task list to a Markdown file."""
         try:
             with open(filename, 'w', encoding='utf-8') as f:
-                for task in self.tasks:
-                    completed = task["status"] == self.STATUS_COMPLETED
-                    if completed:
-                        f.write(f"- [X] {task['description']}\n")   
-                    else:
-                        f.write(f"- [ ] {task['description']}\n")
-            print(f"Tasks saved to {filename}.")
+                f.write(str(self))
+            #print(f"Tasks saved to {filename}.")
         except Exception as e:
             print(f"Error saving tasks to file: {e}")
+    def completed(self, message: str):
+        """
+        Marks the goal as completed, use this whether the task completion was successful or on failure.
+        This method should be called when the task is finished, regardless of the outcome.
+
+        Args:
+            message: The message to be logged.
+        """
+        self.task_completed = True
+        self.message = message
+        print(f"Goal completed: {message}")
+    def start_agent(self):
+        """Starts the sub-agent to perform the tasks if there are any tasks to perform.
+Use this function after setting the tasks.
+Args:
+    None"""
+        if len(self.tasks) == 0:
+            print("No tasks to perform.")
+            return
+        self.start_execution = True
 
 
 

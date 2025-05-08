@@ -36,81 +36,106 @@ if TYPE_CHECKING:
 logger = logging.getLogger("droidrun")
 logging.basicConfig(level=logging.INFO)
 
-DEFAULT_PLANNER_SYSTEM_PROMPT = """You are an expert Task Planner Agent. Your purpose is to break down a complex user goal into a sequence of **functional, contextual steps** for controlling an Android device. Each step must clearly state its **precondition** (the expected state or screen) before defining the functional goal. You do **NOT** specify low-level interactions (like swipes, scrolls, specific coordinates) or execute tasks yourself. You create the plan using specific Planning Tools.
+DEFAULT_PLANNER_SYSTEM_PROMPT = """You are an Android Task Planner. Your job is to create short, functional plans (1-5 steps) to achieve a user's goal on an Android device.
 
-The plan you create will be executed by another agent capable of achieving these functional goals using low-level actions like tapping elements, swiping, inputting text, pressing keys (like HOME, BACK), starting applications, etc. Your awareness of these capabilities ensures your planned steps are achievable, but you should **not** include those low-level actions in your plan tasks.
+**Inputs You Receive:**
+1.  **User's Overall Goal.**
+2.  **Current Device State:**
+    *   A **screenshot** of the current screen.
+    *   **JSON data** of visible UI elements.
 
-You will be given a high-level goal. Your task is to devise a step-by-step plan where each step describes a functional goal to achieve within the UI, building upon the context of the previous step, explicitly stated as a precondition.
+**Your Task:**
+Given the goal and current state, devise the **next 1-5 functional steps**. Focus on what to achieve, not how. Planning fewer steps at a time improves accuracy, as the state can change.
 
-## Core Objective:
-Create a structured plan using the provided Planning Tools, consisting of a sequence of **functional goals**, where each goal (after the first) includes an **explicit precondition** describing the required starting state for that step.
+**Step Format:**
+Each step must be a functional goal. A **precondition** describing the expected starting screen/state for that step is highly recommended for clarity, especially for steps after the first in your 1-5 step plan. Each task string can start with "Precondition: ... Goal: ...". If a specific precondition isn't critical for the first step in your current plan segment, you can use "Precondition: None. Goal: ..." or simply state the goal if the context is implicitly clear from the first step of a new sequence.
 
-## Characteristics of a Good Plan:
-*   **Functional Goal Commands:** Each task describes *what* functional outcome to achieve in the UI (e.g., "Open the Settings app", "Navigate to the WiFi settings screen", "Enter 'password' into the password field", "Select the 'Save' option"). Focuses on the purpose, not the exact physical interaction.
-*   **Explicit Preconditions:** After the first task, each subsequent task **MUST** start by stating the precondition: the assumed current context/screen/state necessary before attempting the goal. This precondition is derived from the expected successful outcome of the *previous* task. (e.g., "Precondition: You are on the main Settings screen. Goal: Tap the 'Network & internet' option.").
-*   **Achievable Goals:** Each functional goal must be something theoretically achievable by the executor using its capabilities (tap, type, swipe, key press, app start, visual check).
-*   **Logical Sequence:** Tasks follow the natural workflow required to achieve the overall user goal, with preconditions linking them logically.
-*   **Appropriate Granularity:** Focus on distinct functional steps or screen transitions. Avoid breaking down single actions (like typing a word) into multiple tasks unless absolutely necessary for clarity. Combine related settings (like hour, minute, AM/PM) into one functional goal if done on the same screen area.
-*   **Uses Planning Tools:** The final plan is generated *only* by calling the provided Planning Tools (`set_tasks`, `add_task`) in a ```python ... ``` block.
+**Executor Agent Capabilities:**
+The plan you create will be executed by another agent. This executor can:
+*   `swipe(direction: str, distance_percentage: int)`
+*   `input_text(text: str, element_hint: Optional[str] = None)`
+*   `press_key(keycode: int)` (Common: 3=HOME, 4=BACK)
+*   `tap_by_coordinates(x: int, y: int)` (This is a fallback; prefer functional goals)
+*   `start_app(package_name: str)`
+*   `list_packages()`
+*   (The executor will use the UI JSON to find elements for your functional goals like "Tap 'Settings button'" or "Enter text into 'Username field'").
 
-## Characteristics of a Bad Plan (Avoid These):
-*   **Micro-interactions:** Listing low-level actions like "Swipe up", "Scroll down", "Tap coordinates (123, 456)", "Press keycode 66 (ENTER)".
-*   **Missing Preconditions:** Tasks (after the first) that don't clearly state the required starting state/screen.
-*   **Vague Instructions:** Tasks like "Manage settings", "Check status", "Configure the network".
-*   **Includes Execution Logic:** Specifying element IDs, widget types, or specific algorithms for finding elements.
-*   **Non-Actionable Goals:** "Think about the next step", "Decide the best option".
-*   **General Python Code:** Trying to *perform* actions using general Python.
-*   **Passive Phrasing:** "The network should be selected" instead of "Select the 'MyNetwork' WiFi network".
+**Your Output:**
+*   Use the `set_tasks` tool to provide your 1-5 step plan as a list of strings. **If this is the *initial* set of tasks you are providing for the current overall goal, you MUST also call `start_agent()` immediately after your `set_tasks` call to begin execution.**
+*   **After your planned steps are executed (triggered by `start_agent()` or subsequent iterations), you will be invoked again with the new device state.** You will then:
+    1.  Assess if the **overall user goal** is complete.
+    2.  If complete, call the `complete_goal(message: str)` tool.
+    3.  If not complete, generate the next 1-5 steps using `set_tasks` (without calling `start_agent()` again).
 
-## How to Respond:
-1.  **Think Step-by-Step:** Analyze the goal, envisioning the sequence of screens and functional changes needed. Outline your thought process, focusing on defining functional goals and their explicit preconditions. The precondition for step N should reflect the expected outcome of step N-1.
-2.  **Generate Code:** Output Python code wrapped in ```python ... ``` tags. This code **MUST** use the provided Planning Tools (`set_tasks` or `add_task`) to define the plan, listing the tasks with their preconditions and goals. Prefer `set_tasks` for the initial plan.
-3.  **Tool Usage:** You have access ONLY to the Planning Tools below. Your code output *must* only call these.
+**Key Rules:**
+*   **Functional Goals ONLY:** (e.g., "Navigate to Wi-Fi settings", "Enter 'MyPassword' into the password field").
+*   **NO Low-Level Actions:** Do NOT specify swipes, taps on coordinates, or element IDs in your plan.
+*   **Short Plans (1-5 steps):** Plan only the immediate next actions.
+*   **Use Tools:** Your response *must* be a Python code block calling `set_tasks` (potentially followed by `start_agent()` on the first call) or `complete_goal`.
 
-## Available Planning Tools:
+**Available Planning Tools:**
 {tools_description}
+*   `set_tasks(tasks: List[str])`: Defines the sequence of tasks. Each element in the list is a string representing a single task.
+*   `complete_goal(message: str)`: Call this when the overall user goal has been achieved. The message can summarize the completion.
+*   `start_agent()`: Call this **only once**, immediately after the *first* `set_tasks` call for an overall goal, to initiate the execution of the plan.
 
-**Important:**
-*   Focus exclusively on **planning functional goals with explicit preconditions**. Plan the *what* (functional outcome) and the *required starting state*, letting the executor determine the *how* (specific taps, swipes).
-*   Your primary output should be the code block calling the planning tool(s).
+---
 
-## Response Format Example:
+**Example Interaction Flow:**
 
-**Goal:** Set an alarm for 7:00 AM tomorrow morning on the Android device and return to the home screen.
+**User Goal:** Turn on Wi-Fi.
 
-**Your Thought Process:**
-Okay, the goal requires setting an alarm functionally and returning home. I need a sequence of functional goals, each with a precondition stating the expected screen/state.
+**(Round 1) Planner Input:**
+*   Goal: "Turn on Wi-Fi"
+*   Current State: Screenshot of Home screen, UI JSON.
 
-1.  **Task 1:** Goal: Start the Clock app. (No precondition needed for the first step, assumes a general starting state like Home or App Drawer). -> Command: Start the 'Clock' application.
-2.  **Task 2:** Precondition: Clock app main screen is open. Goal: Go to the Alarm section. -> Command: Precondition: You are in the Clock app main screen. Goal: Navigate to the 'Alarm' section.
-3.  **Task 3:** Precondition: You are in the Alarm section of the Clock app. Goal: Initiate adding a new alarm. -> Command: Precondition: You are in the Alarm section. Goal: Initiate adding a new alarm (e.g., tap '+' or 'Add').
-4.  **Task 4:** Precondition: The interface for adding/editing a new alarm is displayed. Goal: Set the desired time (7:00 AM). -> Command: Precondition: You are on the new alarm screen. Goal: Set the alarm time to 7:00 AM.
-5.  **Task 5:** Precondition: You are on the new alarm screen and the time is set to 7:00 AM. Goal: Set the desired day (Tomorrow). -> Command: Precondition: The time is set to 7:00 AM on the new alarm screen. Goal: Set the alarm day to 'Tomorrow'.
-6.  **Task 6:** Precondition: You are on the new alarm screen with time (7:00 AM) and day (Tomorrow) configured. Goal: Save the alarm. -> Command: Precondition: The alarm details (7:00 AM, Tomorrow) are configured on the new alarm screen. Goal: Save the new alarm.
-7.  **Task 7:** Precondition: You have returned to the Alarm list screen after saving. Goal: Verify the alarm exists and is enabled. -> Command: Precondition: You are back in the Alarm list screen. Goal: Verify the 7:00 AM alarm is listed and enabled.
-8.  **Task 8:** Precondition: The 7:00 AM alarm has been verified in the list. Goal: Return to Home. -> Command: Precondition: Alarm is verified in the list. Goal: Return to the device's home screen.
+**Planner Thought Process (Round 1):**
+Need to open settings first, then go to Network settings. This is the first plan.
+1. Task 1: "Precondition: None. Goal: Open the Settings app."
+2. Task 2: "Precondition: Settings main screen is open. Goal: Navigate to 'Network & internet' settings."
 
-This sequence uses functional goals linked by explicit preconditions. The executor receives each task knowing the expected starting state. I'll use `set_tasks`.
-
+**Planner Output (Round 1):**
 ```python
-# Using the set_tasks planning tool to define the plan with preconditions and functional goals.
-plan_string = \"\"\"Start the 'Clock' application.
-Precondition: You are in the Clock app main screen. Goal: Navigate to the 'Alarm' section.
-Precondition: You are in the Alarm section. Goal: Initiate adding a new alarm (e.g., tap '+' or 'Add').
-Precondition: You are on the new alarm screen. Goal: Set the alarm time to 7:00 AM.
-Precondition: The time is set to 7:00 AM on the new alarm screen. Goal: Set the alarm day to 'Tomorrow'.
-Precondition: The alarm details (7:00 AM, Tomorrow) are configured on the new alarm screen. Goal: Save the new alarm.
-Precondition: You are back in the Alarm list screen. Goal: Verify the 7:00 AM alarm is listed and enabled.
-Precondition: Alarm is verified in the list. Goal: Return to the device's home screen.\"\"\"
+set_tasks(tasks=[
+    "Precondition: None. Goal: Open the Settings app.",
+    "Precondition: Settings main screen is open. Goal: Navigate to 'Network & internet' settings."
+])
+start_agent() # Called because this is the first set of tasks for this goal
+```
 
-# Call the tool to set these tasks
-set_tasks(tasks=plan_string)
+**(After Executor (triggered by `start_agent()`) performs these steps...)**
 
+**(Round 2) Planner Input:**
+*   Goal: "Turn on Wi-Fi"
+*   Current State: Screenshot of "Network & internet" screen, UI JSON showing "Wi-Fi" option.
 
-Remember: Your output is the plan itself, generated by calling the planning tools (primarily set_tasks) within python ... blocks. Tasks (after the first) MUST include an explicit precondition followed by the functional goal, not low-level interactions. Adhere strictly to the "Good Plan" characteristics.
+**Planner Thought Process (Round 2):**
+Now on "Network & internet". Need to tap Wi-Fi, then enable it. This is a subsequent plan.
+1. Task 1: "Precondition: 'Network & internet' screen is open. Goal: Tap the 'Wi-Fi' option."
+2. Task 2: "Precondition: Wi-Fi settings screen is open. Goal: Enable the Wi-Fi toggle if it's off."
 
-Important note: Each task will be given to an executor agent with no memory of previous tasks. Therefore, each task description must contain the precondition state needed to begin execution and the functional goal to achieve. The executor relies entirely on the information within the single task it receives.
-"""
+**Planner Output (Round 2):**
+```python
+set_tasks(tasks=[
+    "Precondition: 'Network & internet' screen is open. Goal: Tap the 'Wi-Fi' option.",
+    "Precondition: Wi-Fi settings screen is open. Goal: Enable the Wi-Fi toggle if it's off."
+])
+# No start_agent() call here
+```
+
+**(After Executor performs these steps...)**
+
+**(Round 3) Planner Input:**
+*   Goal: "Turn on Wi-Fi"
+*   Current State: Screenshot of Wi-Fi screen, UI JSON showing Wi-Fi is now ON.
+
+**Planner Thought Process (Round 3):**
+Wi-Fi is on. Goal achieved.
+
+**Planner Output (Round 3):**
+```python
+complete_goal(message="Wi-Fi has been successfully enabled.")
+```"""
 DEFAULT_PLANNER_USER_PROMPT = """Goal: {goal}"""
 
 DEFAULT_PLANNER_TASK_FAILED_PROMPT = """
@@ -132,7 +157,7 @@ class PlannerAgent(Workflow):
         self.llm = llm
         self.goal = goal
         self.task_manager = TaskManager()
-        self.tools = [self.task_manager.set_tasks, self.task_manager.add_task, self.task_manager.get_all_tasks, self.task_manager.clear_tasks]
+        self.tools = [self.task_manager.set_tasks, self.task_manager.add_task, self.task_manager.get_all_tasks, self.task_manager.clear_tasks, self.task_manager.completed, self.task_manager.start_agent]
         self.tools_description = self.parse_tool_descriptions()
         if not executer:
             self.executer = SimpleCodeExecutor(loop=None, globals={}, locals={}, tools=self.tools, use_same_scope=True)
@@ -238,7 +263,7 @@ class PlannerAgent(Workflow):
             await self.memory.aput(ChatMessage(role="user", content=self.user_prompt))
         # Update context
         await ctx.set("memory", self.memory)
-        input_messages = self.memory.get()
+        input_messages = self.memory.get_all()
         return InputEvent(input=input_messages)
     
     @step
@@ -277,36 +302,28 @@ class PlannerAgent(Workflow):
             # Add result to memory
             await self.memory.aput(ChatMessage(role="user", content=f"Execution Result:\n```\n{result}\n```"))
                     
-        if planner_step == "generate_plan":
-            if not code:
-                return StopEvent(result={'finished':True, 'message':"No code to execute.", 'steps': 0, 'code_executions': 0}) # Return final message and steps
-            if len(self.task_manager.get_pending_tasks()) > 0:
-                return ExecutePlan()
-            return StopEvent(result={'finished':True, 'message':f"No proper plan was generated. Tasks: {self.task_manager.tasks}", 'steps': 0, 'code_executions': 0}) # Return final message and steps
-        elif planner_step == "failed_task":
-            self.current_retry += 1
-            if not code:
-                return StopEvent(result={'finished':True, 'message':"No code to execute.", 'steps': 0, 'code_executions': 0})
-            if len(self.task_manager.get_pending_tasks()) > 0:
-                return ExecutePlan()
-            return StopEvent(result={'finished':True, 'message':f"No proper plan was generated. Tasks: {self.task_manager.tasks}", 'steps': 0, 'code_executions': 0})
-
-
+        if self.task_manager.start_execution:
+            self.task_manager.start_execution = False
+            logger.info("🚀 Starting task execution.")
+            return ExecutePlan()
+        elif self.task_manager.task_completed:
+            logger.info("✅ Task execution completed.")
+            return StopEvent(result={'finished':True, 'message':"Task execution completed.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter})
+        else:
+            await self.memory.aput(ChatMessage(role="user", content=f"Neither complete(message: str) or start_agent() was called. If you want to execute the plan, please call start_agent() or complete(message: str) if you are done."))
+            logger.info("🚫 Neither complete() nor start_agent() was called. Waiting for next input.")
+            return InputEvent(input=self.memory.get_all())
     @step
     async def execute_plan(self, ev: ExecutePlan, ctx: Context) -> Union[ExecutePlan, TaskFailedEvent]:
         """Execute the first pending task from the plan."""
         pending_tasks = self.task_manager.get_pending_tasks()
         
         if not pending_tasks:
-            if self.task_manager.get_completed_tasks() == len(self.task_manager.tasks):
-                logger.info("✅ All tasks completed successfully.")
-                return StopEvent(result={'finished':True, 'message':"All tasks completed successfully.", 'steps': self.steps_counter, 'code_executions': self.code_exec_counter})
-            else:
-                logger.info("🚫 No pending tasks to execute.")
-                logger.info(f"Task Manager: {self.task_manager}")
-                return StopEvent(result={'finished':True, 'message':"No pending tasks to execute.", 'steps': 0, 'code_executions': 0})
+            logger.info("Handing back to planner agent.")
+            return InputEvent(input=self.memory.get_all())
         pending_task = pending_tasks[0]
         pending_task["status"] = self.task_manager.STATUS_ATTEMPTING
+        self.task_manager.save_to_file()
         logger.info(f"🚀 Executing task: {pending_task['description']}")
         goal = pending_task['description']
         task_result = await self.agent.run(input=goal)
@@ -318,13 +335,15 @@ class PlannerAgent(Workflow):
             await self.memory.aput(ChatMessage(role="user", content=f"Task: {pending_task["description"]}\n Task Result: Successfully completed."))
             # Mark task as completed
             pending_task["status"] = self.task_manager.STATUS_COMPLETED
+            self.task_manager.save_to_file()
             return ExecutePlan()
         else:
             logger.error(f"❌ Task {pending_task['description']} failed.")
             # Add task result to memory
-            await self.memory.aput(ChatMessage(role="user", content=f"Task: {pending_task["description"]}\n Task Result: Failed."))
+            # await self.memory.aput(ChatMessage(role="user", content=f"Task: {pending_task["description"]}\n Task Result: Failed."))
             # Mark task as failed
             pending_task["status"] = self.task_manager.STATUS_FAILED
+            self.task_manager.save_to_file()
             return TaskFailedEvent(task_description=pending_task["description"], reason=task_result["reason"])
         
     @step
@@ -333,10 +352,10 @@ class PlannerAgent(Workflow):
         await ctx.set("step", "failed_task")
         if self.current_retry < self.max_retries:
             logger.info(f"🚫 Task failed. Reevaluating...")
-            await self.memory.aput(ChatMessage(role="user", content=f"Task: {ev.task_description}\nStatus: Failed.\nReason: {ev.reason}."))
+            #await self.memory.aput(ChatMessage(role="user", content=f"Task: {ev.task_description}\nStatus: Failed.\nReason: {ev.reason}."))
             self.task_manager.clear_tasks()
             await self.memory.aput(ChatMessage(role="user", content=DEFAULT_PLANNER_TASK_FAILED_PROMPT.format(goal=self.goal, task_description=ev.task_description, reason=ev.reason)))
-            return InputEvent(input=self.memory.get())
+            return InputEvent(input=self.memory.get_all())
 
         else:
             logger.error(f"🚫 Task failed. Max retries reached. Stopping execution.")
@@ -347,8 +366,8 @@ class PlannerAgent(Workflow):
         """Get streaming response from LLM."""
         logger.debug(f"  - Sending {len(chat_history)} messages to LLM.")
         # Combine system prompt with chat history
-        chat_history = await add_screenshot_image_block(self.tools_instance, chat_history, copy=False)
-        chat_history = await add_ui_text_block(self.tools_instance, chat_history, copy=False)
+        chat_history = await add_screenshot_image_block(self.tools_instance, chat_history)
+        chat_history = await add_ui_text_block(self.tools_instance, chat_history)
         
         messages_to_send = [self.system_message] + chat_history 
         messages_to_send = [message_copy(msg) for msg in messages_to_send]

@@ -234,7 +234,7 @@ class CodeActAgent(Workflow):
         await self.memory.aput(self.user_message)
         # Update context
         await ctx.set("memory", self.memory)
-        input_messages = self.memory.get()
+        input_messages = self.memory.get_all()
         return InputEvent(input=input_messages)
     @step
     async def handle_llm_input(self, ev: InputEvent, ctx: Context) -> Union[ModelOutputEvent, FinalizeEvent]:
@@ -279,7 +279,7 @@ class CodeActAgent(Workflow):
         else:
             message = ChatMessage(role="user", content="No code was provided. If you want to mark task as complete (whether it failed or succeeded), use complete(success:bool, reason:str) function within a code block ```pythn\n```.")
             await self.memory.aput(message)
-            return InputEvent(input=self.memory.get()) 
+            return InputEvent(input=self.memory.get_all()) 
 
     @step
     async def execute_code(self, ev: ExecutionEvent, ctx: Context) -> ExecutionResultEvent:
@@ -316,7 +316,7 @@ class CodeActAgent(Workflow):
         observation_message = ChatMessage(role="user", content=f"Execution Result:\n```\n{output}\n```")
         await self.memory.aput(observation_message)
         logger.info("  - Added execution result to memory.")
-        return InputEvent(input=self.memory.get())
+        return InputEvent(input=self.memory.get_all())
     
 
     @step

@@ -812,6 +812,8 @@ class Tools:
         Take a screenshot of the device.
 
         This function captures the current screen and adds the screenshot to context in the next message.
+
+        This does not save the screenshot anywhere on the phone, it just attaches it to the next message.
         
         Returns:
             True if successful, False otherwise

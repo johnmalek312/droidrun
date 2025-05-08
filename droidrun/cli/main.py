@@ -12,6 +12,10 @@ if __name__ == "__main__":
     __package__ = "droidrun.cli" # Set this based on the script's location within the package
 
 
+try:
+    from . import patch_apis # patch to use multiple api keys
+except Exception as e:
+    pass
 
 import asyncio
 import click
@@ -289,10 +293,12 @@ Expense: Pet Supplies
     #command = "there is an orange dot or circle on the screen, tap on it with tap_by_coordinates() function"
     #command = "Open the draw app and draw a house with 10 different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
     #command = "open the draw app and draw a colorful house with multiple different structures or designs or decorations of your choice, and list them one by one as you are adding them, then list all of them at the end."
-    command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
-    command = "Turn brightness to the max value."
-    command = "Delete all but one of any expenses in pro expense that are exact duplicates, ensuring at least one instance of each unique expense remains."
-    command = """Open the file task.html in Downloads in the file manager; when prompted open it with Chrome. Then create a drawing using the three colors shown at the top and hit submit."""
+    #command = "Record an audio clip and save it with name \"2023_05_21_debate.m4a\" using Audio Recorder app."
+    #command = "Turn brightness to the max value."
+    #command = "Delete all but one of any expenses in pro expense that are exact duplicates, ensuring at least one instance of each unique expense remains."
+    #command = """Open the file task.html in Downloads in the file manager; when prompted open it with Chrome. Then create a drawing using the three colors shown at the top and hit submit."""
+    command = ("There is a screenshot in my gallery of an sms message that contains "
+               "a note i need to do, add it to my task app with appropriate properties.")
     temperature = 0
     steps = 50
     vision = False # Set to false to remove screenshot tool
