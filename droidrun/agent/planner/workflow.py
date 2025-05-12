@@ -157,7 +157,7 @@ class PlannerAgent(Workflow):
         self.llm = llm
         self.goal = goal
         self.task_manager = TaskManager()
-        self.tools = [self.task_manager.set_tasks, self.task_manager.add_task, self.task_manager.get_all_tasks, self.task_manager.clear_tasks, self.task_manager.completed, self.task_manager.start_agent]
+        self.tools = [self.task_manager.set_tasks, self.task_manager.add_task, self.task_manager.get_all_tasks, self.task_manager.clear_tasks, self.task_manager.complete_goal, self.task_manager.start_agent]
         self.tools_description = self.parse_tool_descriptions()
         if not executer:
             self.executer = SimpleCodeExecutor(loop=None, globals={}, locals={}, tools=self.tools, use_same_scope=True)

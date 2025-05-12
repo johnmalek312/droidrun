@@ -208,7 +208,7 @@ class TaskManager:
             #print(f"Tasks saved to {filename}.")
         except Exception as e:
             print(f"Error saving tasks to file: {e}")
-    def completed(self, message: str):
+    def complete_goal(self, message: str):
         """
         Marks the goal as completed, use this whether the task completion was successful or on failure.
         This method should be called when the task is finished, regardless of the outcome.
