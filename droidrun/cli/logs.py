@@ -42,15 +42,21 @@ class LogHandler(logging.Handler):
         self.logs: List[str] = []
 
     def emit(self, record):
+        # Format the record as text
         msg = self.format(record)
-        lines = msg.splitlines()
 
-        for line in lines:
-            self.logs.append(line)
-            # Optionally, limit the log list size
-            if len(self.logs) > 100:
-                self.logs.pop(0)
+        # Print the log line(s) directly.  When a `Live` display is active on
+        # the same console, Rich will automatically scroll the printed text
+        # above the live region – giving us an effectively unlimited stream
+        # of historical logs that can be viewed via the terminal scroll-back
+        # buffer.
+        self.console.print(msg, highlight=False, overflow="fold")
 
+        # Keep an internal list so that we can still show a count of entries
+        # (and potentially other future metadata).  We no longer truncate it.
+        self.logs.extend(msg.splitlines())
+
+        # Refresh the goal / status panels.
         self.rerender()
 
     def render(self):
@@ -74,7 +80,10 @@ class LogHandler(logging.Handler):
         """Create a layout with logs at top and status at bottom"""
         layout = Layout()
         layout.split(
-            Layout(name="logs"),
+            # The logs are now printed directly to the console, so this section
+            # is just a zero-height placeholder to keep the layout structure
+            # intact.
+            Layout(name="logs", size=0),
             Layout(name="goal", size=3),
             Layout(name="status", size=3),
         )
@@ -99,33 +108,9 @@ class LogHandler(logging.Handler):
         except:
             terminal_height = 24  # fallback
 
-        # Reserve space for panels and borders (more conservative estimate)
-        other_components_height = 10  # goal panel + status panel + borders + padding
-        available_log_lines = max(8, terminal_height - other_components_height)
-
-        # Only show recent logs, but ensure we don't flicker
-        visible_logs = (
-            log_list[-available_log_lines:]
-            if len(log_list) > available_log_lines
-            else log_list
-        )
-
-        # Ensure we always have some content to prevent panel collapse
-        if not visible_logs:
-            visible_logs = ["Initializing..."]
-
-        log_content = "\n".join(visible_logs)
-
-        layout["logs"].update(
-            Panel(
-                log_content,
-                title=f"Activity Log ({len(log_list)} entries)",
-                border_style="blue",
-                title_align="left",
-                padding=(0, 1),
-                height=available_log_lines + 2,
-            )
-        )
+        # We no longer render the full activity log inside the live layout – it
+        # scrolls naturally above.  Leave the "logs" placeholder empty.
+        layout["logs"].update("")
 
         if goal:
             goal_text = Text(goal, style="bold")
