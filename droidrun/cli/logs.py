@@ -83,7 +83,7 @@ class LogHandler(logging.Handler):
             # The logs are now printed directly to the console, so this section
             # is just a zero-height placeholder to keep the layout structure
             # intact.
-            Layout(name="logs", size=0),
+            #Layout(name="logs", size=0),
             Layout(name="goal", size=3),
             Layout(name="status", size=3),
         )
@@ -110,7 +110,7 @@ class LogHandler(logging.Handler):
 
         # We no longer render the full activity log inside the live layout – it
         # scrolls naturally above.  Leave the "logs" placeholder empty.
-        layout["logs"].update("")
+        #layout["logs"].update("")
 
         if goal:
             goal_text = Text(goal, style="bold")

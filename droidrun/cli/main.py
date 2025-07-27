@@ -2,6 +2,7 @@
 DroidRun CLI - Command line interface for controlling Android devices through LLM agents.
 """
 
+from droidrun import patch_apis
 import asyncio
 import click
 import os
@@ -208,7 +209,7 @@ class DroidRunCLI(click.Group):
     default="models/gemini-2.5-flash",
 )
 @click.option("--temperature", type=float, help="Temperature for LLM", default=0.2)
-@click.option("--steps", type=int, help="Maximum number of steps", default=15)
+@click.option("--steps", type=int, help="Maximum number of steps", default=150)
 @click.option(
     "--base_url",
     "-u",
@@ -280,10 +281,10 @@ def cli(
     "--model",
     "-m",
     help="LLM model name",
-    default="models/gemini-2.5-flash",
+    default="models/gemini-2.5-pro",
 )
 @click.option("--temperature", type=float, help="Temperature for LLM", default=0.2)
-@click.option("--steps", type=int, help="Maximum number of steps", default=15)
+@click.option("--steps", type=int, help="Maximum number of steps", default=150)
 @click.option(
     "--base_url",
     "-u",

@@ -12,7 +12,8 @@ DEFAULT = AgentPersona(
         Tools.swipe.__name__,
         Tools.input_text.__name__,
         Tools.press_key.__name__,
-        Tools.tap_by_index.__name__,
+        #Tools.tap_by_index.__name__,
+        Tools.tap_by_description.__name__,
         Tools.start_app.__name__,
         Tools.list_packages.__name__,
         Tools.remember.__name__,
@@ -58,7 +59,7 @@ DEFAULT = AgentPersona(
     **(Step 1) Agent Action:**
     ```python
     # First step: Navigate to Wi-Fi settings
-    tap_by_index(3)
+    tap_by_description("Wi-Fi option below the 'Network & Internet' heading")
     ```
 
     **(Step 2) Agent Analysis:** Good! I've successfully navigated to the Wi-Fi settings screen. Now I can see the Wi-Fi settings interface. I notice that Wi-Fi appears to be turned off based on the toggle switch at index 1. I need to turn it on before I can see available networks and connect to 'HomeNetwork'.
@@ -66,7 +67,7 @@ DEFAULT = AgentPersona(
     **(Step 2) Agent Action:**
     ```python
     # Second step: Turn on Wi-Fi to see available networks
-    tap_by_index(1)
+    tap_by_description("Second toggle switch labeled 'Wi-Fi' near the top")
     ```
 
     **(Step 3) Agent Analysis:** Excellent! Wi-Fi is now enabled and I can see a list of available networks appearing on the screen. I can see 'HomeNetwork' in the list at index 5. This is the final step - I need to tap on it to initiate the connection, which will complete my assigned task.
@@ -74,7 +75,7 @@ DEFAULT = AgentPersona(
     **(Step 3) Agent Action:**
     ```python
     # Final step: Connect to the target network
-    tap_by_index(5)
+    tap_by_description("Network option labeled 'HomeNetwork' in the list of available Wi-Fi networks")
     complete(success=True, reason="Successfully navigated to Wi-Fi settings and initiated connection to HomeNetwork")
     ```
     ```

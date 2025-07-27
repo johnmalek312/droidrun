@@ -7,9 +7,12 @@ import io
 import json
 import time
 import logging
+from datetime import datetime
 from typing_extensions import Optional, Dict, Tuple, List, Any, Type, Self
 from droidrun.tools.tools import Tools
 from adbutils import adb
+import requests
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger("droidrun-tools")
 
@@ -207,21 +210,114 @@ class AdbTools(Tools):
             logger.debug(f"Error: {str(e)}")
             return False
 
-    # Replace the old tap function with the new one
-    def tap(self, index: int) -> str:
+    # --- New vision-based tapping helpers -------------------------------------------------
+
+    def tap_by_description(self, description: str) -> str:
+        """Tap an element described in natural language.
+
+        Parameters
+        ----------
+        description : str
+        A natural-language description of the UI element to tap. This should clearly and uniquely identify the target element on the screen. 
+
+        If multiple elements of the same type exist (e.g., several checkboxes or buttons), enhance the description with distinguishing details such as labels, text content, or relative position. 
+
+        Examples:
+            - "Checkbox below the 'Accept Terms' text"
+            - "Top-right search icon"
+            - "Middle login button"
+            - "First radio button in the settings panel"
+            - "Delete icon next to the second email item"
+
+        Use spatial cues (e.g., 'top-left', 'bottom', 'below', 'next to') to help disambiguate similar elements.
+
+
+        Returns
+        -------
+        str
+            Human-readable status message indicating success or error.
         """
-        Tap on a UI element by its index.
+        try:
+            # 1) Screenshot
+            img_format, img_bytes = self.take_screenshot()
 
-        This function uses the cached clickable elements from the last get_clickables call
-        to find the element with the given index and tap on its center coordinates.
+            # 2) Vision service → normalized coords
+            url = "http://175.33.151.40:10001/point"
+            files = {"file": ("screenshot.png", io.BytesIO(img_bytes), "image/png")}
+            data = {"description": description}
+            resp = requests.post(url, files=files, data=data, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+            x_norm, y_norm = result.get("x"), result.get("y")
+            if x_norm is None or y_norm is None:
+                return f"Error: Invalid response from point API: {result}"
 
-        Args:
-            index: Index of the element to tap
+            # 3) Absolute pixel coords
+            img = Image.open(io.BytesIO(img_bytes))
+            w, h = img.size
+            x, y = int(x_norm * w), int(y_norm * h)
+            logger.debug(f"Normalized ({x_norm:.4f}, {y_norm:.4f}) → pixel ({x}, {y})")
 
-        Returns:
-            Result message
-        """
-        return self.tap_by_index(index)
+            # ───────────
+            # 4) Annotate
+            # ───────────
+            draw = ImageDraw.Draw(img)
+            r = 8
+            draw.ellipse((x-r, y-r, x+r, y+r), fill="red")
+
+            annotated = img  # Save screenshot with red dot only
+
+            # ───────────
+            # 5) Prepare folder + log
+            # ───────────
+            desktop = os.path.expanduser("~/Desktop")
+            debug_dir = os.path.join(desktop, "DebugImage")
+            os.makedirs(debug_dir, exist_ok=True)
+
+            # Log file path
+            log_path = os.path.join(debug_dir, "log.json")
+            # Load existing entries or start fresh
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    try:
+                        log = json.load(f)
+                    except json.JSONDecodeError:
+                        log = []
+            else:
+                log = []
+
+            # Unique timestamped filename
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            fname = f"tap_{ts}.png"
+            save_path = os.path.join(debug_dir, fname)
+            annotated.save(save_path)
+
+            # Append to log
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "file": fname,
+                "description": description,
+                "x_norm": x_norm,
+                "y_norm": y_norm,
+                "x": x,
+                "y": y
+            }
+            log.append(entry)
+            with open(log_path, "w", encoding="utf-8") as f:
+                json.dump(log, f, indent=2)
+
+            # 6) Perform the tap
+            self.device.click(x, y)
+            time.sleep(0.5)
+
+            return (
+                f"Tapped '{description}' at ({x}, {y}); "
+                f"annotation saved as {save_path}"
+            )
+
+        except Exception as e:
+            logger.debug(f"Error tapping by description: {e}", exc_info=True)
+            return f"Error tapping by description: {e}"
 
     def swipe(
         self, start_x: int, start_y: int, end_x: int, end_y: int, duration: float = 0.3
@@ -440,7 +536,7 @@ class AdbTools(Tools):
 
     def complete(self, success: bool, reason: str = ""):
         """
-        Mark the task as finished.
+        Mark the task as finished. You must use this function in a separate message to ensure the task is complete visually.
 
         Args:
             success: Indicates if the task was successful.

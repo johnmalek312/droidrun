@@ -32,6 +32,13 @@ class Tools(ABC):
     #    pass
 
     @abstractmethod
+    def tap_by_description(self, description: str) -> bool:
+        """
+        Tap the element described in natural language.
+        """
+        pass
+
+    @abstractmethod
     def swipe(
         self, start_x: int, start_y: int, end_x: int, end_y: int, duration_ms: int = 300
     ) -> bool:
@@ -120,7 +127,8 @@ def describe_tools(tools: Tools) -> Dict[str, Callable[..., Any]]:
         "swipe": tools.swipe,
         "input_text": tools.input_text,
         "press_key": tools.press_key,
-        "tap_by_index": tools.tap_by_index,
+        #"tap_by_index": tools.tap_by_index,
+        "tap_by_description": tools.tap_by_description,
         # App management
         "start_app": tools.start_app,
         "list_packages": tools.list_packages,
