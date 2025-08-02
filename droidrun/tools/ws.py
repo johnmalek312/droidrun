@@ -35,6 +35,7 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 from .tools import Tools
+from .wsdevice import WsDevice
 
 logger = logging.getLogger("droidrun-tools")
 
@@ -62,6 +63,9 @@ class WsTools(Tools):
         self.success: bool | None = None
         self.reason: str | None = None
         self.memory: List[str] = []  # memory helpers not used in WS mode
+
+        # Thin wrapper providing adbutils-like API (click, swipe, ...)
+        self.device = WsDevice(self)
 
         # Start background listener that routes action results
         self._listener_task = loop.create_task(self._listener())
@@ -140,7 +144,79 @@ class WsTools(Tools):
         return self._send_action_sync("tap_by_description", description=description)
 
     def tap_by_coordinates(self, x: int, y: int):
-        return self._send_action_sync("tap_by_coordinates", x=x, y=y)
+        """
+        Tap on absolute screen coordinates and save an annotated debug screenshot.
+
+        This mirrors the behaviour of ``AdbTools.tap_by_description`` so that we
+        retain a visual audit trail of every tap even when running in WebSocket
+        mode.
+
+        Steps:
+        1) Grab a screenshot from the device.
+        2) Draw a small red dot at the tapped location.
+        3) Persist the annotated image to ``~/Desktop/DebugImage``.
+        4) Append metadata to ``log.json`` inside that folder.
+        5) Forward the tap to the phone via the existing WebSocket connection.
+        """
+        try:
+            # 1) Screenshot
+            img_format, img_bytes = self.take_screenshot()
+
+            # 2) Annotate screenshot with a red dot
+            import io
+            import os
+            import json as _json
+            from datetime import datetime
+
+            from PIL import Image, ImageDraw  # pillow dependency
+
+            img = Image.open(io.BytesIO(img_bytes))
+            draw = ImageDraw.Draw(img)
+            r = 8  # radius of the red dot
+            draw.ellipse((x - r, y - r, x + r, y + r), fill="red")
+
+            # 3) Ensure debug directory exists
+            desktop = os.path.expanduser("~/Desktop")
+            debug_dir = os.path.join(desktop, "DebugImage")
+            os.makedirs(debug_dir, exist_ok=True)
+
+            # 4) Save annotated screenshot with unique filename
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            fname = f"tap_{ts}.png"
+            save_path = os.path.join(debug_dir, fname)
+            img.save(save_path)
+
+            # 5) Log the action
+            log_path = os.path.join(debug_dir, "log.json")
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    try:
+                        log = _json.load(f)
+                    except _json.JSONDecodeError:
+                        log = []
+            else:
+                log = []
+
+            log.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "file": fname,
+                    "x": x,
+                    "y": y,
+                }
+            )
+            with open(log_path, "w", encoding="utf-8") as f:
+                _json.dump(log, f, indent=2)
+
+            # 6) Perform the tap on the device
+            result = self.device.click(x, y)
+
+            return (
+                f"Tapped at ({x}, {y}); annotation saved as {save_path}"
+            )
+        except Exception as e:  # pragma: no cover
+            logger.debug(f"[WsTools] Error tapping by coordinates: {e}", exc_info=True)
+            return f"Error tapping by coordinates: {e}"
 
     def swipe(
         self,
@@ -150,13 +226,12 @@ class WsTools(Tools):
         end_y: int,
         duration_ms: int = 300,
     ):
-        return self._send_action_sync(
-            "swipe",
-            start_x=start_x,
-            start_y=start_y,
-            end_x=end_x,
-            end_y=end_y,
-            duration_ms=duration_ms,
+        return self.device.swipe(
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            duration_ms,
         )
 
     def input_text(self, text: str):
