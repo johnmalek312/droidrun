@@ -13,7 +13,7 @@ from rich.console import Console
 from adbutils import adb
 from droidrun.agent.droid import DroidAgent
 from droidrun.agent.utils.llm_picker import load_llm
-from droidrun.tools import AdbTools
+from droidrun.tools import AdbTools, WsTools
 from functools import wraps
 from droidrun.cli.logs import LogHandler
 from droidrun.telemetry import print_telemetry_message
@@ -78,6 +78,8 @@ async def run_command(
     reflection: bool,
     tracing: bool,
     debug: bool,
+    channel: str = "adb",
+    ws_port: int = 10001,
     save_trajectory: bool = False,
     **kwargs,
 ):
@@ -97,19 +99,43 @@ async def run_command(
 
             log_handler.update_step("Setting up tools...")
 
-            # Device setup
-            if device is None:
-                logger.info("🔍 Finding connected device...")
-                
-                devices = adb.list()
-                if not devices:
-                    raise ValueError("No connected devices found.")
-                device = devices[0].serial
-                logger.info(f"📱 Using device: {device}")
-            else:
-                logger.info(f"📱 Using device: {device}")
+            # Channel / Tools setup
+            if channel == "adb":
+                # ADB channel operates exactly like before -------------------
+                if device is None:
+                    logger.info("🔍 Finding connected device...")
+                    devices = adb.list()
+                    if not devices:
+                        raise ValueError("No connected devices found.")
+                    device = devices[0].serial
+                    logger.info(f"📱 Using device: {device}")
+                else:
+                    logger.info(f"📱 Using device: {device}")
 
-            tools = AdbTools(serial=device)
+                tools = AdbTools(serial=device)
+
+            elif channel == "ws":
+                # WebSocket channel (PC acts as server) ----------------------
+                logger.info(f"🌐 Starting WebSocket server on port {ws_port} – waiting for phone...")
+                log_handler.update_step(f"Waiting for phone on ws://0.0.0.0:{ws_port}")
+
+                import websockets
+
+                connected: asyncio.Future = asyncio.Future()
+
+                async def _acceptor(websocket, path):  # noqa: D401
+                    if not connected.done():
+                        connected.set_result(websocket)
+                    await asyncio.Future()  # keep open forever
+
+                server = await websockets.serve(_acceptor, "0.0.0.0", ws_port)
+                # Wait for first connection
+                websocket = await connected
+                logger.info("📡 Phone connected via WebSocket")
+
+                tools = WsTools(websocket=websocket, loop=asyncio.get_event_loop())
+            else:
+                raise ValueError(f"Unknown channel: {channel}")
 
             # LLM setup
             log_handler.update_step("Initializing LLM...")
@@ -318,6 +344,18 @@ def cli(
     help="Save agent trajectory to file",
     default=False,
 )
+@click.option(
+    "--channel",
+    type=click.Choice(["adb", "ws"]),
+    help="Communication channel to device (adb or ws)",
+    default="adb",
+)
+@click.option(
+    "--ws-port",
+    type=int,
+    help="WebSocket server port (when --channel ws)",
+    default=10001,
+)
 def run(
     command: str,
     device: str | None,
@@ -333,6 +371,8 @@ def run(
     tracing: bool,
     debug: bool,
     save_trajectory: bool,
+    channel: str,
+    ws_port: int,
 ):
     """Run a command on your Android device using natural language."""
     # Call our standalone function
@@ -349,6 +389,8 @@ def run(
         reflection,
         tracing,
         debug,
+        channel=channel,
+        ws_port=ws_port,
         temperature=temperature,
         save_trajectory=save_trajectory,
     )
