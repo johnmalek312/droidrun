@@ -6,7 +6,7 @@ __version__ = "0.3.0"
 
 # Import main classes for easier access
 from droidrun.agent.utils.llm_picker import load_llm
-from droidrun.tools import Tools, AdbTools, IOSTools
+from droidrun.tools import Tools, AdbTools
 from droidrun.agent.droid import DroidAgent
 
 
@@ -16,5 +16,4 @@ __all__ = [
     "load_llm",
     "Tools",
     "AdbTools",
-    "IOSTools",
 ]

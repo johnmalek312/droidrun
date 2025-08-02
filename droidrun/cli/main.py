@@ -13,7 +13,7 @@ from rich.console import Console
 from adbutils import adb
 from droidrun.agent.droid import DroidAgent
 from droidrun.agent.utils.llm_picker import load_llm
-from droidrun.tools import AdbTools, IOSTools
+from droidrun.tools import AdbTools
 from functools import wraps
 from droidrun.cli.logs import LogHandler
 from droidrun.telemetry import print_telemetry_message
@@ -79,7 +79,6 @@ async def run_command(
     tracing: bool,
     debug: bool,
     save_trajectory: bool = False,
-    ios: bool = False,
     **kwargs,
 ):
     """Run a command on your Android device using natural language."""
@@ -99,7 +98,7 @@ async def run_command(
             log_handler.update_step("Setting up tools...")
 
             # Device setup
-            if device is None and not ios:
+            if device is None:
                 logger.info("🔍 Finding connected device...")
                 
                 devices = adb.list()
@@ -107,14 +106,10 @@ async def run_command(
                     raise ValueError("No connected devices found.")
                 device = devices[0].serial
                 logger.info(f"📱 Using device: {device}")
-            elif device is None and ios:
-                raise ValueError(
-                    "iOS device not specified. Please specify the device base url (http://device-ip:6643) via --device"
-                )
             else:
                 logger.info(f"📱 Using device: {device}")
 
-            tools = AdbTools(serial=device) if not ios else IOSTools(url=device)
+            tools = AdbTools(serial=device)
 
             # LLM setup
             log_handler.update_step("Initializing LLM...")
@@ -323,7 +318,6 @@ def cli(
     help="Save agent trajectory to file",
     default=False,
 )
-@click.option("--ios", is_flag=True, help="Run on iOS device", default=False)
 def run(
     command: str,
     device: str | None,
@@ -339,7 +333,6 @@ def run(
     tracing: bool,
     debug: bool,
     save_trajectory: bool,
-    ios: bool,
 ):
     """Run a command on your Android device using natural language."""
     # Call our standalone function
@@ -358,7 +351,6 @@ def run(
         debug,
         temperature=temperature,
         save_trajectory=save_trajectory,
-        ios=ios,
     )
 
 
@@ -539,7 +531,6 @@ if __name__ == "__main__":
     debug = True
     base_url = None
     api_base = None
-    ios = False
     run_command(
         command=command,
         device=device,
@@ -555,5 +546,4 @@ if __name__ == "__main__":
         base_url=base_url,
         api_base=api_base,
         api_key=api_key,
-        ios=ios,
     )
